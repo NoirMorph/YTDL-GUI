@@ -76,7 +76,7 @@ pyinstaller --onefile --windowed --icon=icon.png YTDL-GUI.py
 **
 آخرین نسخه EXE را از Release دانلود کنید:
 
-دانلود YTDL-GUI برای ویندوز : (https://github.com/NoirMorph/YTDL-GUI/releases/tag/v1.0)
+دانلود YTDL-GUI برای ویندوز : -   [YTDL-GUI](https://github.com/NoirMorph/YTDL-GUI/releases/tag/v1.0) → فایل نصبی مخصوص ویندوز (YTDL-GUI.exe)
 
 فایل EXE را اجرا کنید، نیاز به نصب Python نیست.
 
