@@ -34,7 +34,7 @@ YTDL-GUI یک برنامه‌ی حرفه‌ای و **رایگان** برای د�
 ### کلون کردن مخزن
 
 ```bash
-git clone https://github.com/USERNAME/YTDL-GUI.git
+git clone https://github.com/NoirMorph/YTDL-GUI.git
 cd YTDL-GUI
 ```
 
