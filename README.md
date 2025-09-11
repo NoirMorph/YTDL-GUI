@@ -106,6 +106,7 @@ YTDL-GUI/
 ---
 
 ## 📸 تصاویر (Screenshots)
+📌
 
 
 ![صفحه اصلی](YTDL-GUI/screenshots/main_ui.png)
