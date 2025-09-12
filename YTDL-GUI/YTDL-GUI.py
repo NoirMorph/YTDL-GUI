@@ -1,38 +1,3 @@
-"""
-دانلودکننده یوتیوب (نسخه اصلاح‌شده و تمیز با UI بهبودیافته و تم تیره)
-این نسخه تمام خطاهای مربوط به thread در PyQt6 را برطرف کرده و قابلیت‌های زیر را اضافه می‌کند:
-- انتخاب جداگانه کیفیت برای هر ویدیو
-- نمایش لینک ویدیو در جدول
-- قابلیت حذف تکی ویدیوها
-- منوی راست‌کلیک پیشرفته با قابلیت باز کردن مسیر فایل
-- رفع کامل خطاهای QObject::setParent و QObject::Cannot create children
-- قابلیت پاک شدن اطلاعات پس از خروج
-- قابلیت ذخیره اطلاعات در فایل های txt, json, csv (برای صف دانلود، دانلود شده‌ها و موارد انتخاب شده)
-- انتخاب چندین ویدیو (تکی و چندتایی)
-- جستجو و فیلتر جدول
-- نمایش مراحل عملیات و مدیریت بهتر خطاها
-- نمایش میزان دانلود و محل ذخیره ویدیو
-- چک کردن وجود فایل دانلود شده قبلی
-- ریسایز سلول‌ها
-- نمایش عملیات‌ها و خطاها داخل برنامه بدون کرش
-- قابلیت لغو عملیات
-- گزینه‌های بیشتر در منوی راست‌کلیک
-- هنگام بستن برنامه، غیرفعال کردن عملیات‌ها و انتقال دانلودهای فعال به تب جدید
-- پروگرس بار برای دانلود و تبدیل فایل
-- دکمه لغو برای هر عملیات جداگانه
-- تب دانلود تکی (بدون هنگ کردن) با نمایش اطلاعات و دانلود thumbnail
-- قابلیت انتخاب فرمت خروجی برای هر ویدیو
-- قابلیت کپی و ذخیره اطلاعات ویدیوهای انتخاب شده از راست‌کلیک
-- بهبود: دانلود خودکار ffmpeg اگر نصب نبود برای پشتیبانی از تبدیل فرمت
-
-بهبودهای UI:
-- استفاده از QStyleSheet برای ظاهر مدرن و تمیز با تم تیره
-- اضافه کردن حاشیه‌ها، فونت‌ها و رنگ‌های هماهنگ
-- بهبود لی‌آوت‌ها برای پاسخگویی بهتر
-- اضافه کردن tooltip برای عناصر
-- آیکون برنامه اضافه شده (فرض بر وجود فایل icon.png در دایرکتوری جاری)
-- بهبود بیشتر: اضافه کردن border-radius, hover effects, alternate row colors در جدول، bold labels, framed thumbnail
-"""
 import sys
 import os
 import json
@@ -48,6 +13,7 @@ import zipfile
 import tarfile
 import platform
 import shutil
+from datetime import timedelta
 
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
@@ -55,37 +21,53 @@ from PySide6.QtWidgets import (
     QMessageBox, QProgressBar, QSpinBox, QDialog, QFormLayout, QMenuBar, QMenu,
     QCheckBox, QTabWidget, QTextEdit, QInputDialog, QAbstractItemView
 )
-from PySide6.QtGui import QPixmap, QAction, QIcon, QFont
-from PySide6.QtCore import Qt, QThread, Signal, QMetaObject, QEvent
+from PySide6.QtGui import QPixmap, QAction, QIcon, QFont, QPalette, QColor
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QMetaObject, QEvent
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import yt_dlp
 
-# ---------------- Color Variables for Dark Theme ----------------
-COLOR_PRIMARY = "#5682B1"  # blue for primary actions
-COLOR_SECONDARY = "#739EC9"  # Teal for secondary actions
-COLOR_PRIMARY_DARK = "#6a7282"  #  silver blue for primary actions
-COLOR_DANGER = "#CF6679"  # Red for danger actions
-COLOR_NEUTRAL = "#B3B3B3"  # Light gray for neutral
-COLOR_BACKGROUND = "#121212"  # Dark background
-COLOR_TEXT = "#FFFFFF"  # White text
-COLOR_ACCENT = "#44444E"  # Yellow accent
-COLOR_SURFACE = "#1E1E1E"  # Slightly lighter dark for surfaces
-COLOR_GRID = "#333333"  # Dark grid lines
-COLOR_HOVER = "#154D71"  # Dark blue for hover
-COLOR_ALTERNATE = "#2A2A2A"  # Alternate row color
+# ---------------- Color Variables ----------------
+DARK_COLOR_PRIMARY = "#5682B1"
+DARK_COLOR_SECONDARY = "#739EC9"
+DARK_COLOR_PRIMARY_DARK = "#616161"
+DARK_COLOR_DANGER = "#CF6679"
+DARK_COLOR_NEUTRAL = "#B3B3B3"
+DARK_COLOR_BACKGROUND = "#121212"
+DARK_COLOR_TEXT = "#f8fafc"
+DARK_COLOR_TEXT_MENU = "#f8fafc"
+DARK_COLOR_ACCENT = "#44444E"
+DARK_COLOR_SURFACE = "#1E1E1E"
+DARK_COLOR_GRID = "#333333"
+DARK_COLOR_HOVER = "#154D71"
+DARK_COLOR_ALTERNATE = "#2A2A2A"
+
+LIGHT_COLOR_PRIMARY = "#2196F3"
+LIGHT_COLOR_SECONDARY = "#4CAF50"
+LIGHT_COLOR_PRIMARY_DARK = "#616161"
+LIGHT_COLOR_DANGER = "#F44336"
+LIGHT_COLOR_NEUTRAL = "#757575"
+LIGHT_COLOR_BACKGROUND = "#FFFFFF"
+LIGHT_COLOR_TEXT = "#020618"
+LIGHT_COLOR_TEXT_MENU = "#020618"
+LIGHT_COLOR_ACCENT = "#FFEB3B"
+LIGHT_COLOR_SURFACE = "#F5F5F5"
+LIGHT_COLOR_GRID = "#E0E0E0"
+LIGHT_COLOR_HOVER = "#E3F2FD"
+LIGHT_COLOR_ALTERNATE = "#FAFAFA"
 
 # ---------------- Constants ----------------
-CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".youtube_downloader_config.json")
-QUEUE_PATH = os.path.join(os.path.expanduser("~"), ".youtube_downloader_queue.json")
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".youtube_downloader_config.json")
+QUEUE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".youtube_downloader_queue.json")
 THUMB_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".youtube_downloader_thumbs")
 FFMPEG_DIR = os.path.join(os.path.expanduser("~"), ".ffmpeg_bin")
 QUALITY_OPTIONS = ["بهترین", "بدترین", "1080p", "720p", "480p", "360p", "144p"]
 FORMAT_OPTIONS = ["ویدیو و صدا", "فقط صدا"]
 VIDEO_FORMAT_OPTIONS = ["mp4", "mkv", "mov", "avi", "webm"]
 SUBTITLE_LANGS = ["هیچ", "انگلیسی (en)", "فارسی (fa)"]
+THEME_OPTIONS = ["Auto", "Light", "Dark"]
 
 # ---------------- Helper Functions ----------------
 
@@ -94,21 +76,16 @@ def resource_path(relative_path):
         base_path = sys._MEIPASS
     except AttributeError:
         base_path = os.path.abspath(os.path.dirname(__file__))
-    full_path = os.path.join(base_path, relative_path)
-    logging.info(f"تلاش برای دسترسی به فایل: {full_path}")
-    if not os.path.exists(full_path):
-        logging.error(f"فایل {full_path} یافت نشد.")
-    return full_path
+    return os.path.join(base_path, relative_path)
 
 def download_ffmpeg():
-    """دانلود و استخراج ffmpeg بسته به سیستم عامل."""
     system = platform.system().lower()
     machine = platform.machine().lower()
     
     if system == "windows":
         url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
         file_ext = ".zip"
-    elif system == "darwin":  # macOS
+    elif system == "darwin":
         url = "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip"
         file_ext = ".zip"
     elif system == "linux":
@@ -121,11 +98,9 @@ def download_ffmpeg():
         raise OSError("سیستم عامل پشتیبانی نمی‌شود.")
     
     download_path = os.path.join(FFMPEG_DIR, f"ffmpeg{file_ext}")
-    
     os.makedirs(FFMPEG_DIR, exist_ok=True)
     
-    # دانلود فایل
-    response = requests.get(url, stream=True)
+    response = requests.get(url, stream=True, timeout=30)
     if response.status_code == 200:
         with open(download_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
@@ -133,7 +108,6 @@ def download_ffmpeg():
     else:
         raise IOError("خطا در دانلود ffmpeg.")
     
-    # استخراج
     if file_ext == ".zip":
         with zipfile.ZipFile(download_path, 'r') as zip_ref:
             zip_ref.extractall(FFMPEG_DIR)
@@ -141,8 +115,7 @@ def download_ffmpeg():
         with tarfile.open(download_path, 'r:xz') as tar_ref:
             tar_ref.extractall(FFMPEG_DIR)
     
-    # پیدا کردن و کپی باینری‌ها
-    for root, dirs, files in os.walk(FFMPEG_DIR):
+    for root, _, files in os.walk(FFMPEG_DIR):
         for file in files:
             if file in ["ffmpeg", "ffmpeg.exe", "ffprobe", "ffprobe.exe", "ffplay", "ffplay.exe"]:
                 shutil.copy(os.path.join(root, file), FFMPEG_DIR)
@@ -155,48 +128,34 @@ def get_ffmpeg_path():
     ffmpeg_name = "ffmpeg.exe" if system == "windows" else "ffmpeg"
     ffmpeg_path = resource_path(os.path.join("ffmpeg_bin", ffmpeg_name))
     
-    logging.info(f"تلاش برای دسترسی به ffmpeg در مسیر: {ffmpeg_path}")
-    
     if os.path.exists(ffmpeg_path):
         if system != "windows":
             try:
                 os.chmod(ffmpeg_path, 0o755)
-                logging.info(f"مجوزهای ffmpeg تنظیم شد: {ffmpeg_path}")
             except OSError as e:
                 logging.error(f"خطا در تنظیم مجوزهای ffmpeg: {e}")
                 QMessageBox.critical(None, "خطا", f"خطا در تنظیم مجوزهای ffmpeg: {e}")
                 return None
-        logging.info(f"ffmpeg با موفقیت یافت شد: {ffmpeg_path}")
         return ffmpeg_path
     
-    logging.error("ffmpeg در پروژه یافت نشد. لطفاً فایل‌های باینری ffmpeg را در پوشه ffmpeg_bin قرار دهید.")
-    QMessageBox.critical(None, "خطا", "ffmpeg یافت نشد. لطفاً اطمینان حاصل کنید که فایل‌های باینری ffmpeg در پوشه ffmpeg_bin موجود باشند.")
-    return None
-
-import subprocess
-import os
+    try:
+        return download_ffmpeg()
+    except Exception as e:
+        logging.error(f"خطا در دانلود ffmpeg: {e}")
+        QMessageBox.critical(None, "خطا", "ffmpeg یافت نشد و دانلود آن ناموفق بود.")
+        return None
 
 def get_yt_dlp_version():
-    """نسخه yt-dlp را بررسی می‌کند و برمی‌گرداند (بدون باز شدن CMD)."""
     try:
         creation_flags = 0
-        if os.name == "nt":  # فقط روی ویندوز
+        if os.name == "nt":
             creation_flags = subprocess.CREATE_NO_WINDOW
-
-        result = subprocess.run(
-            ['yt-dlp', '--version'],
-            capture_output=True,
-            text=True,
-            check=True,
-            creationflags=creation_flags
-        )
+        result = subprocess.run(['yt-dlp', '--version'], capture_output=True, text=True, check=True, creationflags=creation_flags)
         return result.stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
-
 def get_ffmpeg_version():
-    """بررسی می‌کند که آیا ffmpeg نصب است (بدون باز شدن CMD)."""
     ffmpeg_path = get_ffmpeg_path()
     if not ffmpeg_path:
         return None
@@ -204,23 +163,12 @@ def get_ffmpeg_version():
         creation_flags = 0
         if os.name == "nt":
             creation_flags = subprocess.CREATE_NO_WINDOW
-
-        result = subprocess.run(
-            [ffmpeg_path, '-version'],
-            capture_output=True,
-            text=True,
-            check=False,
-            creationflags=creation_flags
-        )
-        if result.returncode == 0:
-            return "installed"
-        return None
+        result = subprocess.run([ffmpeg_path, '-version'], capture_output=True, text=True, check=False, creationflags=creation_flags)
+        return "installed" if result.returncode == 0 else None
     except FileNotFoundError:
         return None
 
-
 def load_json_file(file_path, default_data=None):
-    """یک فایل JSON را بارگذاری می‌کند یا داده پیش‌فرض را برمی‌گرداند."""
     if not os.path.exists(file_path):
         return default_data if default_data is not None else {}
     try:
@@ -230,28 +178,28 @@ def load_json_file(file_path, default_data=None):
             raise ValueError("Invalid JSON structure")
         return data
     except (json.JSONDecodeError, ValueError) as e:
-        logging.error(f"Invalid JSON in {file_path}: {e}")
+        logging.error(f"خطا در بارگذاری JSON از {file_path}: {e}")
         QMessageBox.warning(None, "خطای فایل", f"فایل {file_path} خراب است. داده پیش‌فرض استفاده می‌شود.")
         return default_data if default_data is not None else {}
 
 def save_json_file(file_path, data):
-    """داده‌ها را در یک فایل JSON ذخیره می‌کند."""
     try:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
         backup_path = file_path + ".bak"
         if os.path.exists(file_path):
             os.replace(file_path, backup_path)
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
     except IOError as e:
-        logging.error(f"Failed to save file {file_path}: {e}")
+        logging.error(f"خطا در ذخیره فایل {file_path}: {e}")
         if 'backup_path' in locals() and os.path.exists(backup_path):
             os.replace(backup_path, file_path)
 
 def format_file_size(size_bytes):
-    """اندازه فایل را به یک رشته قابل خواندن برای انسان تبدیل می‌کند (مثلاً MB، GB)."""
     if size_bytes is None:
         return "نامشخص"
-    
     try:
         size_bytes = float(size_bytes)
         if size_bytes >= 1024**3:
@@ -266,51 +214,82 @@ def format_file_size(size_bytes):
         return "نامشخص"
 
 def format_duration(duration_sec):
-    """تبدیل مدت زمان از ثانیه به فرمت دقیقه:ثانیه."""
     if duration_sec is None:
         return "نامشخص"
     try:
-        minutes = int(duration_sec) // 60
-        seconds = int(duration_sec) % 60
-        return f"{minutes}:{seconds:02d}"
+        return str(timedelta(seconds=int(duration_sec)))
     except (ValueError, TypeError):
         return "نامشخص"
 
+def format_speed(speed_bytes):
+    if speed_bytes is None or speed_bytes == 0:
+        return ""
+    try:
+        speed_bytes = float(speed_bytes)
+        if speed_bytes >= 1024**2:
+            return f"{speed_bytes / 1024**2:.2f} MB/s"
+        elif speed_bytes >= 1024:
+            return f"{speed_bytes / 1024:.2f} KB/s"
+        else:
+            return f"{speed_bytes:.2f} B/s"
+    except (ValueError, TypeError):
+        return ""
+
+def format_eta(eta_seconds):
+    if eta_seconds is None:
+        return ""
+    try:
+        return str(timedelta(seconds=int(eta_seconds)))
+    except (ValueError, TypeError):
+        return ""
+
 def check_file_exists(save_folder, title, ext):
-    """چک می‌کند آیا فایل با نام مشابه در مسیر وجود دارد."""
     safe_title = "".join(c for c in title if c.isalnum() or c in " ._()")
     file_path = os.path.join(save_folder, f"{safe_title}.{ext}")
     return os.path.exists(file_path), file_path
 
-def delete_partial_files(save_folder, title, ext):
-    """حذف فایل‌های نیمه دانلود شده."""
+def check_partial_file(save_folder, title, ext):
+    safe_title = "".join(c for c in title if c.isalnum() or c in " ._()")
+    part_path = os.path.join(save_folder, f"{safe_title}.{ext}.part")
+    return os.path.exists(part_path), part_path
+
+def delete_partial_files(save_folder, title, ext, force_delete=False):
     safe_title = "".join(c for c in title if c.isalnum() or c in " ._()")
     file_path = os.path.join(save_folder, f"{safe_title}.{ext}")
     part_path = file_path + '.part'
-    if os.path.exists(file_path):
-        try: os.remove(file_path)
-        except OSError as e: logging.error(f"Error deleting file {file_path}: {e}")
-    if os.path.exists(part_path):
-        try: os.remove(part_path)
-        except OSError as e: logging.error(f"Error deleting file {part_path}: {e}")
-
+    paths = [file_path, part_path] if force_delete else [part_path]
+    for path in paths:
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError as e:
+                logging.error(f"خطا در حذف فایل {path}: {e}")
 
 def download_thumbnail(url, save_path):
-    """دانلود thumbnail از URL و ذخیره در مسیر."""
+    session = requests.Session()
+    retry = Retry(connect=5, read=5, redirect=5, backoff_factor=1)
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    
     try:
-        response = requests.get(url, timeout=10)
+        response = session.get(url, timeout=30)
         if response.status_code == 200:
             with open(save_path, 'wb') as f:
                 f.write(response.content)
             return True
         return False
     except Exception as e:
-        logging.error(f"Error downloading thumbnail: {e}")
+        logging.error(f"خطا در دانلود تامنیل: {e}")
         return False
+
+def is_dark_mode():
+    if hasattr(QApplication, "styleHints"):
+        return QApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
+    return False
 
 # ---------------- Worker Classes (Threads) ----------------
 class DownloaderThread(QThread):
-    """رشته کارگر برای مدیریت فرآیند دانلود."""
     download_progress = Signal(dict)
     postprocess_progress = Signal(dict)
     download_finished = Signal(dict)
@@ -324,25 +303,26 @@ class DownloaderThread(QThread):
         self.url = url
         self.ydl_opts = ydl_opts
         self.is_cancelled = False
+        self.is_paused = False
 
     def run(self):
-        """متد اصلی برای اجرای دانلود."""
         def progress_hook(d):
-            if self.is_cancelled:
-                raise yt_dlp.utils.DownloadCancelled("Download cancelled by user")
+            if self.is_cancelled or self.is_paused:
+                raise yt_dlp.utils.DownloadCancelled("Download cancelled or paused by user")
             d['id'] = self.id
             d['phase'] = 'download'
             self.download_progress.emit(d)
 
         def postprocessor_hook(d):
-            if self.is_cancelled:
-                raise yt_dlp.utils.DownloadCancelled("Download cancelled by user")
+            if self.is_cancelled or self.is_paused:
+                raise yt_dlp.utils.DownloadCancelled("Download cancelled or paused by user")
             d['id'] = self.id
             d['phase'] = 'postprocess'
             self.postprocess_progress.emit(d)
 
         self.ydl_opts['progress_hooks'] = [progress_hook]
         self.ydl_opts['postprocessor_hooks'] = [postprocessor_hook]
+        self.ydl_opts['continuedl'] = True  # برای resume
 
         try:
             self.download_step.emit(self.id, "استخراج اطلاعات...")
@@ -351,26 +331,29 @@ class DownloaderThread(QThread):
                 self.download_step.emit(self.id, "شروع دانلود...")
                 ydl.download([self.url])
                 info_dict['id'] = self.id
+                info_dict['filepath'] = ydl.prepare_filename(info_dict)
                 self.download_finished.emit(info_dict)
         except yt_dlp.utils.DownloadCancelled:
-            self.download_cancelled.emit(self.id)
+            if self.is_paused:
+                self.download_cancelled.emit(self.id)
+            else:
+                self.download_cancelled.emit(self.id)
         except yt_dlp.utils.DownloadError as e:
             error_str = str(e).lower()
             if "geo-restricted" in error_str:
-                self.download_error.emit("ویدیو به دلیل محدودیت جغرافیایی در دسترس نیست. از پروکسی استفاده کنید.", self.id)
+                self.download_error.emit("ویدیو به دلیل محدودیت جغرافیایی در دسترس نیست.", self.id)
             elif "connectionreseterror" in error_str or "10054" in error_str:
-                self.download_error.emit("اتصال توسط سرور قطع شد. لطفاً دوباره تلاش کنید.", self.id)
+                self.download_error.emit("اتصال توسط سرور قطع شد. دوباره تلاش کنید.", self.id)
             else:
-                self.download_error.emit(str(e), self.id)
+                self.download_error.emit(f"خطا در دانلود: {e}", self.id)
         except Exception as e:
-            self.download_error.emit(f"An unexpected error occurred: {e}", self.id)
+            self.download_error.emit(f"خطای غیرمنتظره: {e}", self.id)
 
 class SettingsDialog(QDialog):
-    """دیالوگ برای تنظیمات برنامه."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("تنظیمات")
-        self.setFixedSize(400, 300)
+        self.setFixedSize(400, 380)
         self.parent_app = parent
 
         main_layout = QFormLayout()
@@ -408,9 +391,18 @@ class SettingsDialog(QDialog):
         self.subtitle_lang_combo.setCurrentText(self.parent_app.settings.get("subtitle_lang", "هیچ"))
         main_layout.addRow("دانلود زیرنویس:", self.subtitle_lang_combo)
         
-        self.clear_data_on_exit = QCheckBox("پاک کردن اطلاعات هنگام خروج")
-        self.clear_data_on_exit.setChecked(self.parent_app.settings.get("clear_on_exit", True))
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(THEME_OPTIONS)
+        self.theme_combo.setCurrentText(self.parent_app.settings.get("theme", "Auto"))
+        main_layout.addRow("تم برنامه:", self.theme_combo)
+        
+        self.clear_data_on_exit = QCheckBox("پاک کردن صف دانلود هنگام خروج")
+        self.clear_data_on_exit.setChecked(self.parent_app.settings.get("clear_on_exit", False))
         main_layout.addRow(self.clear_data_on_exit)
+        
+        self.delete_partial_on_cancel = QCheckBox("حذف خودکار فایل‌های ناقص هنگام لغو دانلود")
+        self.delete_partial_on_cancel.setChecked(self.parent_app.settings.get("delete_partial_on_cancel", False))
+        main_layout.addRow(self.delete_partial_on_cancel)
 
         button_layout = QHBoxLayout()
         self.ok_btn = QPushButton("تایید")
@@ -429,7 +421,6 @@ class SettingsDialog(QDialog):
             self.folder_label.setText(folder)
 
 class SaveDialog(QDialog):
-    """دیالوگ برای انتخاب فیلدهای اطلاعاتی جهت ذخیره در فایل."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("ذخیره اطلاعات")
@@ -462,264 +453,10 @@ class SaveDialog(QDialog):
     def get_selected_fields(self):
         return [field for field, checkbox in self.checkboxes.items() if checkbox.isChecked()]
 
-class SingleDownloadTab(QWidget):
-    """تب برای دانلود تکی ویدیو (اصلاح شده برای جلوگیری از هنگ کردن)."""
-    info_fetched = Signal(dict)
-    fetch_error = Signal(str)
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent_app = parent
-        self.video_info = None
-        self.thumbnail_pixmap = None
-        self.downloader_thread = None
-
-        layout = QVBoxLayout()
-
-        url_layout = QHBoxLayout()
-        self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("آدرس ویدیو یوتیوب را وارد کنید...")
-        self.fetch_btn = QPushButton("دریافت اطلاعات")
-        self.fetch_btn.clicked.connect(self.fetch_video_info)
-        url_layout.addWidget(self.url_input)
-        url_layout.addWidget(self.fetch_btn)
-        layout.addLayout(url_layout)
-
-        self.info_label = QLabel("اطلاعات ویدیو:")
-        self.info_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        layout.addWidget(self.info_label)
-
-        self.title_label = QLabel()
-        self.title_label.setFont(QFont("Arial", 11))
-        self.title_label.setWordWrap(True)
-        layout.addWidget(self.title_label)
-
-        thumbnail_layout = QHBoxLayout()
-        self.thumbnail_label = QLabel()
-        self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.thumbnail_label.setFixedSize(200, 200)
-        self.thumbnail_label.setStyleSheet(f"border: 1px solid {COLOR_GRID}; border-radius: 5px; background-color: {COLOR_BACKGROUND};")
-        download_thumb_btn = QPushButton("دانلود تامنیل")
-        download_thumb_btn.clicked.connect(self.download_single_thumbnail)
-        thumbnail_layout.addWidget(self.thumbnail_label)
-        thumbnail_layout.addWidget(download_thumb_btn)
-        layout.addLayout(thumbnail_layout)
-
-        options_layout = QHBoxLayout()
-        quality_label = QLabel("کیفیت:")
-        quality_label.setFont(QFont("Arial", 8))
-        self.quality_combo = QComboBox()
-        self.quality_combo.addItems(QUALITY_OPTIONS)
-        options_layout.addWidget(quality_label)
-        options_layout.addWidget(self.quality_combo)
-
-        format_label = QLabel("فرمت:")
-        format_label.setFont(QFont("Arial", 8))
-        self.format_combo = QComboBox()
-        self.format_combo.addItems(FORMAT_OPTIONS)
-        self.format_combo.setCurrentText(self.parent_app.settings.get("format", "ویدیو و صدا"))
-        options_layout.addWidget(format_label)
-        options_layout.addWidget(self.format_combo)
-
-        video_format_label = QLabel("فرمت خروجی ویدیو:")
-        video_format_label.setFont(QFont("Arial", 10))
-        self.video_format_combo = QComboBox()
-        self.video_format_combo.addItems(VIDEO_FORMAT_OPTIONS)
-        self.video_format_combo.setCurrentText(self.parent_app.settings.get("video_format", "mp4"))
-        options_layout.addWidget(video_format_label)
-        options_layout.addWidget(self.video_format_combo)
-        
-        subtitle_label = QLabel("زیرنویس:")
-        subtitle_label.setFont(QFont("Arial", 8))
-        self.subtitle_lang_combo = QComboBox()
-        self.subtitle_lang_combo.addItems(SUBTITLE_LANGS)
-        self.subtitle_lang_combo.setCurrentText(self.parent_app.settings.get("subtitle_lang", "هیچ"))
-        options_layout.addWidget(subtitle_label)
-        options_layout.addWidget(self.subtitle_lang_combo)
-        
-        layout.addLayout(options_layout)
-
-        self.download_btn = QPushButton("دانلود ویدیو")
-        self.download_btn.clicked.connect(self.start_single_download)
-        self.download_btn.setEnabled(False)
-        layout.addWidget(self.download_btn)
-
-        self.cancel_btn = QPushButton("لغو دانلود")
-        self.cancel_btn.setEnabled(False)
-        self.cancel_btn.clicked.connect(self.cancel_single_download)
-        layout.addWidget(self.cancel_btn)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setTextVisible(True)
-        layout.addWidget(self.progress_bar)
-        self.setLayout(layout)
-
-        self.info_fetched.connect(self.on_info_fetched)
-        self.fetch_error.connect(self.on_fetch_error)
-
-    def fetch_video_info(self):
-        url = self.url_input.text().strip()
-        if not url:
-            return
-        
-        self.fetch_btn.setEnabled(False)
-        self.download_btn.setEnabled(False)
-        self.title_label.setText("در حال دریافت اطلاعات...")
-        self.thumbnail_label.clear()
-        
-        threading.Thread(target=self._thread_fetch_info, args=(url,), daemon=True).start()
-
-    def _thread_fetch_info(self, url):
-        try:
-            ydl_opts = {'quiet': True}
-            if self.parent_app.settings.get("proxy"):
-                ydl_opts['proxy'] = self.parent_app.settings.get("proxy")
-            
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                video_info = ydl.extract_info(url, download=False)
-
-            thumbnail_data = None
-            thumbnail_url = video_info.get('thumbnail')
-            if thumbnail_url:
-                session = requests.Session()
-                retries = Retry(total=5, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-                session.mount('http://', HTTPAdapter(max_retries=retries))
-                session.mount('https://', HTTPAdapter(max_retries=retries))
-                response = session.get(thumbnail_url, timeout=10)
-                if response.status_code == 200:
-                    thumbnail_data = response.content
-            
-            self.info_fetched.emit({'video_info': video_info, 'thumbnail_data': thumbnail_data})
-        except Exception as e:
-            self.fetch_error.emit(str(e))
-            
-    def on_info_fetched(self, result):
-        self.video_info = result['video_info']
-        thumbnail_data = result['thumbnail_data']
-
-        self.title_label.setText(f"عنوان: {self.video_info.get('title', 'نامشخص')}")
-        
-        if thumbnail_data:
-            pixmap = QPixmap()
-            pixmap.loadFromData(thumbnail_data)
-            scaled_pixmap = pixmap.scaled(200, 200, Qt.KeepAspectRatio)
-            self.thumbnail_label.setPixmap(scaled_pixmap)
-            self.thumbnail_pixmap = pixmap
-        
-        self.fetch_btn.setEnabled(True)
-        self.download_btn.setEnabled(True)
-
-    def on_fetch_error(self, error_msg):
-        QMessageBox.warning(self, "خطا", f"خطا در دریافت اطلاعات: {error_msg}")
-        self.title_label.setText("خطا در دریافت اطلاعات. لطفاً دوباره تلاش کنید.")
-        self.fetch_btn.setEnabled(True)
-
-    def download_single_thumbnail(self):
-        if not self.thumbnail_pixmap:
-            QMessageBox.warning(self, "خطا", "تامنیل موجود نیست.")
-            return
-        file_path, _ = QFileDialog.getSaveFileName(self, "ذخیره تامنیل", "", "تصاویر (*.jpg *.png)")
-        if file_path:
-            self.thumbnail_pixmap.save(file_path)
-
-    def start_single_download(self):
-        if not self.video_info:
-            return
-
-        save_folder = self.parent_app.settings.get("save_folder")
-        if not save_folder or not os.path.isdir(save_folder):
-            QMessageBox.warning(self, "خطا", "پوشه ذخیره نامعتبر است. لطفاً از تنظیمات یک پوشه انتخاب کنید.")
-            return
-
-        ydl_opts = {
-            'outtmpl': os.path.join(save_folder, '%(title)s.%(ext)s'),
-            'quiet': False,
-            'retries': 10,
-            'fragment_retries': 10,
-        }
-        if self.parent_app.settings.get("proxy"):
-            ydl_opts['proxy'] = self.parent_app.settings.get("proxy")
-
-        format_str = self.format_combo.currentText()
-        if format_str == "فقط صدا":
-            ydl_opts['format'] = 'bestaudio/best'
-            ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}]
-        else:
-            quality = self.quality_combo.currentText()
-            video_format = self.video_format_combo.currentText()
-            if quality == "بهترین":
-                ydl_opts['format'] = 'bestvideo+bestaudio/best'
-            elif quality == "بدترین":
-                ydl_opts['format'] = 'worstvideo+worstaudio/worst'
-            else:
-                res = quality.replace("p", "")
-                ydl_opts['format'] = f'bestvideo[height<={res}]+bestaudio/best[height<={res}]'
-            ydl_opts['postprocessors'] = [{'key': 'FFmpegVideoConvertor', 'preferedformat': video_format}]
-        
-        subtitle_lang = self.subtitle_lang_combo.currentText()
-        if subtitle_lang != "هیچ":
-            lang_code = subtitle_lang.split(' (')[1][:-1]
-            ydl_opts['writesubtitles'] = True
-            ydl_opts['writeautomaticsub'] = True
-            ydl_opts['subtitleslangs'] = [lang_code]
-            ydl_opts['postprocessors'].append({'key': 'FFmpegSubtitlesConvertor', 'format': 'srt'})
-
-        ffmpeg_path = get_ffmpeg_path()
-        if ffmpeg_path:
-            ydl_opts['ffmpeg_location'] = ffmpeg_path
-
-        self.progress_bar.setValue(0)
-        self.download_btn.setEnabled(False)
-        self.cancel_btn.setEnabled(True)
-
-        self.downloader_thread = DownloaderThread("single", self.url_input.text(), ydl_opts)
-        self.downloader_thread.download_progress.connect(self.on_single_progress)
-        self.downloader_thread.postprocess_progress.connect(self.on_single_postprocess)
-        self.downloader_thread.download_finished.connect(self.on_single_finished)
-        self.downloader_thread.download_error.connect(self.on_single_error)
-        self.downloader_thread.download_cancelled.connect(self.on_single_cancelled)
-        self.downloader_thread.download_step.connect(self.on_single_step)
-        self.downloader_thread.start()
-
-    def on_single_step(self, item_id, step_msg):
-        self.title_label.setText(step_msg)
-
-    def on_single_progress(self, d):
-        if d['status'] == 'downloading':
-            try:
-                percent = float(d.get('_percent_str', '0%').strip().replace('%', ''))
-                self.progress_bar.setValue(int(percent))
-            except (ValueError, AttributeError): pass
-
-    def on_single_postprocess(self, d):
-        self.progress_bar.setValue(50 if d['status'] != 'finished' else 100)
-
-    def on_single_finished(self, info_dict):
-        self.progress_bar.setValue(100)
-        self.cancel_btn.setEnabled(False)
-        self.download_btn.setEnabled(True)
-        QMessageBox.information(self, "موفقیت", "دانلود با موفقیت به پایان رسید.")
-
-    def on_single_error(self, error_msg, item_id):
-        self.progress_bar.setValue(0)
-        self.cancel_btn.setEnabled(False)
-        self.download_btn.setEnabled(True)
-        QMessageBox.warning(self, "خطا", f"خطا در دانلود: {error_msg}")
-
-    def on_single_cancelled(self, item_id):
-        self.progress_bar.setValue(0)
-        self.cancel_btn.setEnabled(False)
-        self.download_btn.setEnabled(True)
-        QMessageBox.information(self, "لغو", "دانلود لغو شد.")
-
-    def cancel_single_download(self):
-        if self.downloader_thread:
-            self.downloader_thread.is_cancelled = True
-
 class App(QWidget):
     ui_update_signal = Signal(str, bool)
     video_info_loaded = Signal(int, dict)
+    update_progress = Signal(str, float, str, str, str)  # id, percent, downloaded_str, speed_str, eta_str
 
     def __init__(self):
         super().__init__()
@@ -734,17 +471,23 @@ class App(QWidget):
         self.yt_dlp_version = None
         self.ffmpeg_version = None
         self.thread_pool = ThreadPoolExecutor(max_workers=4)
+        self.fetch_cancelled = False
+        self.ask_delete_partial = False
 
         self.ui_update_signal.connect(self.update_ui_from_thread)
         self.video_info_loaded.connect(self._add_to_table_from_thread)
+        self.update_progress.connect(self._update_progress_ui)
 
         self.load_settings()
-        self.apply_settings()
+        self.apply_theme()
+        self.init_ui()
         self.load_queue()
         self.check_dependencies(silent=True)
-
-        self.init_ui()
         self.restore_queue_to_table()
+
+        self.ui_timer = QTimer(self)
+        self.ui_timer.timeout.connect(self._refresh_ui)
+        self.ui_timer.start(1000)
 
     def init_ui(self):
         main_layout = QVBoxLayout()
@@ -769,8 +512,12 @@ class App(QWidget):
         self.url_input.setPlaceholderText("آدرس ویدیو یا لیست پخش یوتیوب را وارد کنید...")
         self.add_btn = QPushButton("اضافه کردن به صف")
         self.add_btn.clicked.connect(self.add_to_queue)
+        self.cancel_add_btn = QPushButton("لغو اضافه کردن")
+        self.cancel_add_btn.clicked.connect(self.cancel_add_to_queue)
+        self.cancel_add_btn.setEnabled(False)
         input_layout.addWidget(self.url_input)
         input_layout.addWidget(self.add_btn)
+        input_layout.addWidget(self.cancel_add_btn)
         main_layout.addLayout(input_layout)
 
         self.tab_widget = QTabWidget()
@@ -785,24 +532,22 @@ class App(QWidget):
         search_layout.addWidget(self.search_input)
         download_layout.addLayout(search_layout)
 
-        self.table = QTableWidget(0, 12)
-        self.table.setHorizontalHeaderLabels(["عنوان", "لینک", "حجم", "مدت زمان", "کیفیت", "فرمت", "زیرنویس", "وضعیت", "پیشرفت", "سرعت", "زمان باقی‌مانده", "عملیات"])
+        self.table = QTableWidget(0, 12)  # افزایش به 12 ستون برای حجم دانلود شده
+        self.table.setHorizontalHeaderLabels(["عنوان", "لینک", "حجم کل", "مدت زمان", "کیفیت", "فرمت", "زیرنویس", "وضعیت", "پیشرفت", "حجم دانلود شده", "سرعت", "زمان باقی‌مانده"])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
         header.setSectionResizeMode(0, QHeaderView.Interactive)
         header.setSectionResizeMode(1, QHeaderView.Interactive)
-        header.setSectionResizeMode(11, QHeaderView.Fixed)
-        self.table.setColumnWidth(11, 60)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.table.customContextMenuRequested.connect(self.show_context_menu)
+        self.table.customContextMenuRequested.connect(lambda pos: self.show_context_menu(pos, "download"))
         download_layout.addWidget(self.table)
 
         button_layout = QHBoxLayout()
         self.start_download_btn = QPushButton("شروع دانلود")
         self.start_download_btn.clicked.connect(self.start_downloads)
-        self.cancel_download_btn = QPushButton("لغو لغو تمام دانلودها")
+        self.cancel_download_btn = QPushButton("لغو تمام دانلودها")
         self.cancel_download_btn.clicked.connect(self.cancel_all_downloads)
         self.cancel_download_btn.setEnabled(False)
         self.remove_selected_btn = QPushButton("حذف انتخاب‌شده‌ها")
@@ -821,12 +566,13 @@ class App(QWidget):
         self.completed_table.setHorizontalHeaderLabels(["عنوان", "لینک", "حجم", "مدت زمان", "کیفیت", "وضعیت", "تاریخ آپلود", "مسیر فایل"])
         completed_header = self.completed_table.horizontalHeader()
         completed_header.setSectionResizeMode(QHeaderView.Stretch)
+        self.completed_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.completed_table.setAlternatingRowColors(True)
+        self.completed_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.completed_table.customContextMenuRequested.connect(lambda pos: self.show_context_menu(pos, "completed"))
         completed_layout.addWidget(self.completed_table)
         self.completed_tab.setLayout(completed_layout)
         self.tab_widget.addTab(self.completed_tab, "دانلود شده‌ها")
-
-        self.single_download_tab = SingleDownloadTab(self)
-        self.tab_widget.addTab(self.single_download_tab, "دانلود تکی")
 
         main_layout.addWidget(self.tab_widget)
 
@@ -841,48 +587,104 @@ class App(QWidget):
 
         self.setLayout(main_layout)
 
-        self.setStyleSheet(f"""
+    def apply_theme(self):
+        theme = self.settings.get("theme", "Auto")
+        use_dark = (theme == "Dark") or (theme == "Auto" and is_dark_mode())
+
+        color_schemes = {
+            "dark": {
+                "PRIMARY": DARK_COLOR_PRIMARY,
+                "SECONDARY": DARK_COLOR_SECONDARY,
+                "PRIMARY_DARK": DARK_COLOR_PRIMARY_DARK,
+                "DANGER": DARK_COLOR_DANGER,
+                "NEUTRAL": DARK_COLOR_NEUTRAL,
+                "BACKGROUND": DARK_COLOR_BACKGROUND,
+                "TEXT": DARK_COLOR_TEXT,
+                "MENU_TEXT": DARK_COLOR_TEXT_MENU,
+                "ACCENT": DARK_COLOR_ACCENT,
+                "SURFACE": DARK_COLOR_SURFACE,
+                "GRID": DARK_COLOR_GRID,
+                "HOVER": DARK_COLOR_HOVER,
+                "ALTERNATE": DARK_COLOR_ALTERNATE
+            },
+            "light": {
+                "PRIMARY": LIGHT_COLOR_PRIMARY,
+                "SECONDARY": LIGHT_COLOR_SECONDARY,
+                "PRIMARY_DARK": LIGHT_COLOR_PRIMARY_DARK,
+                "DANGER": LIGHT_COLOR_DANGER,
+                "NEUTRAL": LIGHT_COLOR_NEUTRAL,
+                "BACKGROUND": LIGHT_COLOR_BACKGROUND,
+                "TEXT": LIGHT_COLOR_TEXT,
+                "MENU_TEXT": LIGHT_COLOR_TEXT_MENU,
+                "ACCENT": LIGHT_COLOR_ACCENT,
+                "SURFACE": LIGHT_COLOR_SURFACE,
+                "GRID": LIGHT_COLOR_GRID,
+                "HOVER": LIGHT_COLOR_HOVER,
+                "ALTERNATE": LIGHT_COLOR_ALTERNATE
+            }
+        }
+
+        colors = color_schemes["dark" if use_dark else "light"]
+
+        palette = QPalette()
+        palette.setColor(QPalette.Window, QColor(colors["BACKGROUND"]))
+        palette.setColor(QPalette.WindowText, QColor(colors["TEXT"]))
+        palette.setColor(QPalette.Base, QColor(colors["SURFACE"]))
+        palette.setColor(QPalette.AlternateBase, QColor(colors["ALTERNATE"]))
+        palette.setColor(QPalette.ToolTipBase, QColor(colors["BACKGROUND"]))
+        palette.setColor(QPalette.ToolTipText, QColor(colors["TEXT"]))
+        palette.setColor(QPalette.Text, QColor(colors["MENU_TEXT"]))
+        palette.setColor(QPalette.Button, QColor(colors["PRIMARY"]))
+        palette.setColor(QPalette.ButtonText, QColor(colors["TEXT"]))
+        palette.setColor(QPalette.Highlight, QColor(colors["PRIMARY_DARK"]))
+        palette.setColor(QPalette.HighlightedText, QColor(colors["TEXT"]))
+        QApplication.setPalette(palette)
+
+        stylesheet = f"""
             QWidget {{
-                background-color: {COLOR_BACKGROUND};
-                color: {COLOR_TEXT};
+                background-color: {colors['BACKGROUND']};
+                color: {colors['TEXT']};
+                font-family: 'Segoe UI', Arial, sans-serif;
             }}
             QLineEdit, QTextEdit {{
-                background-color: {COLOR_SURFACE};
-                border: 1px solid {COLOR_GRID};
+                background-color: {colors['SURFACE']};
+                border: 1px solid {colors['GRID']};
                 border-radius: 4px;
                 padding: 5px;
             }}
             QPushButton {{
-                background-color: {COLOR_PRIMARY};
+                background-color: {colors['PRIMARY']};
                 border: none;
                 border-radius: 4px;
                 padding: 6px 12px;
+                color: {colors['TEXT']};
             }}
             QPushButton:hover {{
-                background-color: {COLOR_HOVER};
+                background-color: {colors['HOVER']};
             }}
             QTableWidget {{
-                background-color: {COLOR_SURFACE};
-                alternate-background-color: {COLOR_ALTERNATE};
-                gridline-color: {COLOR_GRID};
-                selection-background-color: {COLOR_PRIMARY_DARK};
+                background-color: {colors['SURFACE']};
+                alternate-background-color: {colors['ALTERNATE']};
+                gridline-color: {colors['GRID']};
+                selection-background-color: {colors['PRIMARY_DARK']};
+                color: {colors['TEXT']};
             }}
             QHeaderView::section {{
-                background-color: {COLOR_SURFACE};
-                border: 1px solid {COLOR_GRID};
+                background-color: {colors['SURFACE']};
+                border: 1px solid {colors['GRID']};
                 padding: 4px;
             }}
             QProgressBar {{
-                background-color: {COLOR_SURFACE};
-                border: 1px solid {COLOR_GRID};
+                background-color: {colors['SURFACE']};
+                border: 1px solid {colors['GRID']};
                 text-align: center;
             }}
             QProgressBar::chunk {{
-                background-color: {COLOR_PRIMARY};
+                background-color: {colors['PRIMARY']};
             }}
             QComboBox {{
-                background-color: {COLOR_SURFACE};
-                border: 1px solid {COLOR_GRID};
+                background-color: {colors['SURFACE']};
+                border: 1px solid {colors['GRID']};
                 border-radius: 4px;
                 padding: 5px;
             }}
@@ -890,71 +692,181 @@ class App(QWidget):
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
                 width: 15px;
-                border-left-width: 1px;
-                border-left-color: {COLOR_GRID};
-                border-left-style: solid;
+                border-left: 1px solid {colors['GRID']};
             }}
-            QLabel {{
-                color: {COLOR_TEXT};
+            QLabel {{ color: {colors['TEXT']}; }}
+            QTabWidget::pane {{ border: 1px solid {colors['GRID']}; }}
+            QTabBar::tab {{
+                background-color: {colors['SURFACE']};
+                border: 1px solid {colors['GRID']};
+                border-bottom-color: {colors['BACKGROUND']};
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                padding: 8px;
             }}
-        """)
+            QTabBar::tab:selected {{
+                background-color: {colors['BACKGROUND']};
+            }}
+            QMenu {{
+                background-color: {colors['BACKGROUND']};
+                color: {colors['MENU_TEXT']};
+                border: 1px solid {colors['GRID']};
+                border-radius: 6px;
+                padding: 4px;
+                margin: 2px;
+            }}
+            QMenu::item {{
+                background-color: {colors['SURFACE']};
+                color: {colors['MENU_TEXT']};
+                padding: 8px 28px;
+                margin: 2px;
+                border-radius: 3px;
+            }}
+            QMenu::item:selected {{
+                background-color: {colors['PRIMARY_DARK']};
+                color: {colors['MENU_TEXT']};
+            }}
+            QMenu::item:disabled {{
+                color: {colors['NEUTRAL']};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background: {colors['GRID']};
+                margin: 4px 8px;
+            }}
+        """
+        self.setStyleSheet(stylesheet)
 
     def log_message(self, message):
-        self.log_text.append(message)
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.log_text.append(f"[{timestamp}] {message}")
 
-    def show_context_menu(self, position):
-        rows = [index.row() for index in self.table.selectionModel().selectedRows()]
+    def show_context_menu(self, position, tab_type):
+        if tab_type == "download":
+            table = self.table
+            items = self.download_queue
+        elif tab_type == "completed":
+            table = self.completed_table
+            items = self.completed_downloads
+        else:
+            return
+
+        rows = [index.row() for index in table.selectionModel().selectedRows()]
         if not rows:
             return
 
         menu = QMenu()
-        start_action = QAction("شروع دانلود")
-        start_action.triggered.connect(lambda: self.start_single_download_from_menu(rows[0]) if len(rows) == 1 else self.start_selected_downloads())
-        menu.addAction(start_action)
+        if tab_type == "download":
+            start_action = QAction("شروع دانلود")
+            start_action.triggered.connect(lambda: self.start_single_download_from_menu(rows[0]) if len(rows) == 1 else self.start_selected_downloads())
+            menu.addAction(start_action)
 
-        remove_action = QAction("حذف")
-        remove_action.triggered.connect(self.remove_selected_items)
-        menu.addAction(remove_action)
+            pause_action = QAction("مکث دانلود")
+            pause_action.triggered.connect(lambda: self.pause_single_download(rows[0]) if len(rows) == 1 else None)
+            pause_action.setEnabled(len(rows) == 1 and items[rows[0]]['status'] == "در حال دانلود...")
+            menu.addAction(pause_action)
 
-        copy_title = QAction("کپی عنوان")
-        copy_title.triggered.connect(lambda: self.copy_selected_titles(rows))
-        menu.addAction(copy_title)
+            resume_action = QAction("ادامه دانلود")
+            resume_action.triggered.connect(lambda: self.resume_single_download(rows[0]) if len(rows) == 1 else None)
+            resume_action.setEnabled(len(rows) == 1 and items[rows[0]]['status'] == "متوقف شده")
+            menu.addAction(resume_action)
 
-        copy_url = QAction("کپی URL")
-        copy_url.triggered.connect(lambda: self.copy_selected_urls(rows))
-        menu.addAction(copy_url)
+            cancel_single_action = QAction("لغو دانلود تکی")
+            cancel_single_action.triggered.connect(lambda: self.cancel_single_download(rows[0]) if len(rows) == 1 else None)
+            cancel_single_action.setEnabled(len(rows) == 1 and items[rows[0]]['status'] in ["در حال دانلود...", "متوقف شده"])
+            menu.addAction(cancel_single_action)
 
-        download_thumb = QAction("دانلود تامنیل")
-        download_thumb.triggered.connect(lambda: self.download_selected_thumbnails(rows))
-        menu.addAction(download_thumb)
+            cancel_all_action = QAction("لغو تمام دانلودها")
+            cancel_all_action.triggered.connect(self.cancel_all_downloads)
+            menu.addAction(cancel_all_action)
 
-        export_selected = menu.addMenu("خروجی موارد انتخابی")
-        export_selected.addAction("TXT").triggered.connect(lambda: self.export_selected_items('txt'))
-        export_selected.addAction("JSON").triggered.connect(lambda: self.export_selected_items('json'))
-        export_selected.addAction("CSV").triggered.connect(lambda: self.export_selected_items('csv'))
+            remove_action = QAction("حذف")
+            remove_action.triggered.connect(self.remove_selected_items)
+            menu.addAction(remove_action)
 
-        open_folder = QAction("باز کردن پوشه ذخیره")
-        open_folder.triggered.connect(self.open_save_folder)
-        menu.addAction(open_folder)
+            copy_title = QAction("کپی عنوان")
+            copy_title.triggered.connect(lambda: self.copy_selected_titles(rows))
+            menu.addAction(copy_title)
 
-        copy_all_urls = QAction("کپی تمام URLها")
-        copy_all_urls.triggered.connect(self.copy_all_urls)
-        menu.addAction(copy_all_urls)
+            copy_url = QAction("کپی URL")
+            copy_url.triggered.connect(lambda: self.copy_selected_urls(rows))
+            menu.addAction(copy_url)
 
-        menu.exec(self.table.viewport().mapToGlobal(position))
+            download_thumb = QAction("دانلود تامنیل")
+            download_thumb.triggered.connect(lambda: self.download_selected_thumbnails(rows))
+            menu.addAction(download_thumb)
 
-    def copy_selected_titles(self, rows):
+            export_selected = menu.addMenu("خروجی موارد انتخابی")
+            export_selected.addAction("TXT").triggered.connect(lambda: self.export_selected_items('txt'))
+            export_selected.addAction("JSON").triggered.connect(lambda: self.export_selected_items('json'))
+            export_selected.addAction("CSV").triggered.connect(lambda: self.export_selected_items('csv'))
+
+            open_folder = QAction("باز کردن پوشه ذخیره")
+            open_folder.triggered.connect(self.open_save_folder)
+            menu.addAction(open_folder)
+
+            open_file_path = QAction("باز کردن مسیر ویدیو")
+            open_file_path.triggered.connect(lambda: self.open_video_file_path(rows))
+            if len(rows) == 1 and items[rows[0]].get('status') == "دانلود شده" and items[rows[0]].get('download_path'):
+                open_file_path.setEnabled(True)
+            else:
+                open_file_path.setEnabled(False)
+            menu.addAction(open_file_path)
+
+            copy_all_urls = QAction("کپی تمام URLها")
+            copy_all_urls.triggered.connect(self.copy_all_urls)
+            menu.addAction(copy_all_urls)
+
+        elif tab_type == "completed":
+            copy_title = QAction("کپی عنوان")
+            copy_title.triggered.connect(lambda: self.copy_selected_titles(rows, "completed"))
+            menu.addAction(copy_title)
+
+            copy_url = QAction("کپی URL")
+            copy_url.triggered.connect(lambda: self.copy_selected_urls(rows, "completed"))
+            menu.addAction(copy_url)
+
+            export_selected = menu.addMenu("خروجی موارد انتخابی")
+            export_selected.addAction("TXT").triggered.connect(lambda: self.export_selected_items('txt', "completed"))
+            export_selected.addAction("JSON").triggered.connect(lambda: self.export_selected_items('json', "completed"))
+            export_selected.addAction("CSV").triggered.connect(lambda: self.export_selected_items('csv', "completed"))
+
+            open_folder = QAction("باز کردن پوشه ذخیره")
+            open_folder.triggered.connect(self.open_save_folder)
+            menu.addAction(open_folder)
+
+            open_file_path = QAction("باز کردن مسیر ویدیو")
+            open_file_path.triggered.connect(lambda: self.open_video_file_path(rows, "completed"))
+            if len(rows) == 1 and items[rows[0]].get('download_path'):
+                open_file_path.setEnabled(True)
+            else:
+                open_file_path.setEnabled(False)
+            menu.addAction(open_file_path)
+
+            copy_all_urls = QAction("کپی تمام URLها")
+            copy_all_urls.triggered.connect(lambda: self.copy_all_urls("completed"))
+            menu.addAction(copy_all_urls)
+
+        menu.exec(table.viewport().mapToGlobal(position))
+
+    def copy_selected_titles(self, rows, tab_type="download"):
         if not rows:
             return
-        titles = [self.download_queue[row]['title'] for row in rows if 0 <= row < len(self.download_queue)]
+        if tab_type == "download":
+            titles = [self.download_queue[row]['title'] for row in rows if 0 <= row < len(self.download_queue)]
+        else:
+            titles = [self.completed_downloads[row]['title'] for row in rows if 0 <= row < len(self.completed_downloads)]
         if titles:
             QApplication.clipboard().setText("\n".join(titles))
             self.status_label.setText(f"{len(titles)} عنوان کپی شد.")
 
-    def copy_selected_urls(self, rows):
+    def copy_selected_urls(self, rows, tab_type="download"):
         if not rows:
             return
-        urls = [self.download_queue[row]['url'] for row in rows if 0 <= row < len(self.download_queue)]
+        if tab_type == "download":
+            urls = [self.download_queue[row]['url'] for row in rows if 0 <= row < len(self.download_queue)]
+        else:
+            urls = [self.completed_downloads[row]['url'] for row in rows if 0 <= row < len(self.completed_downloads)]
         if urls:
             QApplication.clipboard().setText("\n".join(urls))
             self.status_label.setText(f"{len(urls)} آدرس کپی شد.")
@@ -967,25 +879,31 @@ class App(QWidget):
                 item = self.download_queue[row]
                 url = item.get('thumbnail_url')
                 if not url:
-                    QMessageBox.warning(self, "خطا", "URL تامنیل موجود نیست.")
+                    self.log_message(f"تامنیل برای '{item['title']}' یافت نشد یا در دسترس نیست.")
                     continue
                 
                 safe_title = "".join(c for c in item['title'] if c.isalnum() or c in " ._()")
                 file_path, _ = QFileDialog.getSaveFileName(self, "ذخیره تامنیل", f"{safe_title}.jpg", "تصاویر (*.jpg *.png)")
                 if file_path:
-                    self.thread_pool.submit(download_thumbnail, url, file_path)
+                    success = download_thumbnail(url, file_path)
+                    if success:
+                        self.log_message(f"تامنیل برای '{item['title']}' در {file_path} ذخیره شد.")
+                    else:
+                        self.log_message(f"خطا در دانلود تامنیل برای '{item['title']}'.")
 
-    def copy_all_urls(self):
-        urls = "\n".join([item['url'] for item in self.download_queue])
+    def copy_all_urls(self, tab_type="download"):
+        if tab_type == "download":
+            urls = "\n".join([item['url'] for item in self.download_queue])
+        else:
+            urls = "\n".join([item['url'] for item in self.completed_downloads])
         QApplication.clipboard().setText(urls)
         self.status_label.setText("تمامی آدرس‌ها در کلیپ‌بورد کپی شدند.")
 
     def open_save_folder(self):
         folder = self.settings.get("save_folder")
         if not os.path.exists(folder):
-            QMessageBox.warning(self, "پوشه پیدا نشد", "پوشه ذخیره وجود ندارد. لطفاً در تنظیمات، یک پوشه معتبر انتخاب کنید.")
+            QMessageBox.warning(self, "پوشه پیدا نشد", "پوشه ذخیره وجود ندارد.")
             return
-
         try:
             if sys.platform == "win32":
                 os.startfile(folder)
@@ -994,7 +912,47 @@ class App(QWidget):
             else:
                 subprocess.Popen(["xdg-open", folder])
         except Exception as e:
-            QMessageBox.critical(self, "خطا در باز کردن پوشه", f"خطا در باز کردن پوشه: {e}")
+            self.log_message(f"خطا در باز کردن پوشه: {e}")
+            QMessageBox.critical(self, "خطا", f"خطا در باز کردن پوشه: {e}")
+
+    def open_video_file_path(self, rows, tab_type="download"):
+        if len(rows) != 1:
+            QMessageBox.warning(self, "خطا", "لطفاً فقط یک ویدیو انتخاب کنید.")
+            return
+        row = rows[0]
+        item = self.download_queue[row] if tab_type == "download" else self.completed_downloads[row]
+        file_path = item.get('download_path')
+        if not file_path or not os.path.exists(file_path):
+            QMessageBox.warning(self, "خطا", "فایل ویدیویی یافت نشد.")
+            return
+        try:
+            folder_path = os.path.dirname(file_path)
+            if sys.platform == "win32":
+                os.startfile(folder_path)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", folder_path])
+            else:
+                subprocess.Popen(["xdg-open", folder_path])
+            self.log_message(f"باز کردن مسیر فایل: {file_path}")
+        except Exception as e:
+            self.log_message(f"خطا در باز کردن مسیر فایل: {e}")
+            QMessageBox.critical(self, "خطا", f"خطا در باز کردن مسیر فایل: {e}")
+
+    def export_selected_items(self, file_type, tab_type="download"):
+        if tab_type == "download":
+            table = self.table
+            items = self.download_queue
+        else:
+            table = self.completed_table
+            items = self.completed_downloads
+
+        selected_rows = [index.row() for index in table.selectionModel().selectedRows()]
+        if not selected_rows:
+            QMessageBox.warning(self, "هیچ انتخابی", "هیچ موردی انتخاب نشده است.")
+            return
+        
+        selected_items = [items[row] for row in selected_rows]
+        self._export_data_logic(selected_items, file_type)
 
     def show_settings_dialog(self):
         dialog = SettingsDialog(self)
@@ -1005,10 +963,13 @@ class App(QWidget):
             self.settings["concurrency"] = dialog.concurrency_spin.value()
             self.settings["proxy"] = dialog.proxy_input.text()
             self.settings["subtitle_lang"] = dialog.subtitle_lang_combo.currentText()
+            self.settings["theme"] = dialog.theme_combo.currentText()
             self.settings["clear_on_exit"] = dialog.clear_data_on_exit.isChecked()
+            self.settings["delete_partial_on_cancel"] = dialog.delete_partial_on_cancel.isChecked()
             self.save_settings()
-            self.apply_settings()
-            QMessageBox.information(self, "تنظیمات ذخیره شد", "تنظیمات با موفقیت ذخیره شدند.")
+            self.apply_theme()
+            self.log_message("تنظیمات ذخیره شد.")
+            QMessageBox.information(self, "تنظیمات", "تنظیمات ذخیره شدند.")
 
     def load_settings(self):
         self.settings = load_json_file(CONFIG_PATH, {
@@ -1019,12 +980,10 @@ class App(QWidget):
             "concurrency": 3,
             "proxy": "",
             "subtitle_lang": "هیچ",
-            "clear_on_exit": False
+            "theme": "Auto",
+            "clear_on_exit": False,
+            "delete_partial_on_cancel": False
         })
-
-    def apply_settings(self):
-        window_size = self.settings.get("window_size", [1200, 700])
-        self.resize(window_size[0], window_size[1])
 
     def save_settings(self):
         self.settings["window_size"] = [self.width(), self.height()]
@@ -1032,10 +991,14 @@ class App(QWidget):
 
     def load_queue(self):
         self.download_queue = load_json_file(QUEUE_PATH, [])
+        for item in self.download_queue:
+            item.setdefault('id', str(uuid.uuid4()))
+            item.setdefault('subtitle_lang', self.settings.get("subtitle_lang", "هیچ"))
+        self.log_message(f"صف دانلود بارگذاری شد: {len(self.download_queue)} مورد")
 
     def save_queue(self):
         save_json_file(QUEUE_PATH, self.download_queue)
-    
+
     def import_from_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "وارد کردن فایل", "", "متن (*.txt);;CSV (*.csv)")
         if not file_path:
@@ -1054,17 +1017,16 @@ class App(QWidget):
             self.ui_update_signal.emit(f"در حال وارد کردن {len(urls)} آدرس...", False)
             self.thread_pool.submit(self._fetch_and_add_list, urls)
         else:
-            QMessageBox.warning(self, "فایل خالی", "فایل انتخاب شده حاوی هیچ آدرس معتبری نیست.")
-    
+            QMessageBox.warning(self, "فایل خالی", "فایل انتخاب شده حاوی آدرس معتبری نیست.")
+
     def _export_data_logic(self, data_list, file_type):
-        """منطق اصلی برای ذخیره داده‌ها در فایل."""
         dialog = SaveDialog(self)
         if not dialog.exec():
             return
 
         fields = dialog.get_selected_fields()
         if not fields:
-            QMessageBox.warning(self, "انتخابی صورت نگرفت", "لطفاً حداقل یک فیلد را برای ذخیره انتخاب کنید.")
+            QMessageBox.warning(self, "انتخابی صورت نگرفت", "حداقل یک فیلد انتخاب کنید.")
             return
 
         default_filename = "youtube_downloader_export"
@@ -1086,40 +1048,28 @@ class App(QWidget):
             elif file_type == 'csv':
                 with open(file_path, 'w', newline='', encoding='utf-8') as f:
                     writer = csv.writer(f)
-                    writer.writerow(fields) # Write header
+                    writer.writerow(fields)
                     for item in data_list:
                         row_data = [item.get(self._get_field_key(field), 'نامشخص') for field in fields]
                         writer.writerow(row_data)
-            QMessageBox.information(self, "ذخیره شد", f"اطلاعات با موفقیت در {os.path.basename(file_path)} ذخیره شد.")
+            self.log_message(f"اطلاعات در {os.path.basename(file_path)} ذخیره شد.")
         except IOError as e:
+            self.log_message(f"خطا در ذخیره فایل: {e}")
             QMessageBox.critical(self, "خطا", f"خطا در ذخیره فایل: {e}")
 
     def export_to_file(self, file_type):
-        """صف دانلود فعلی را در یک فایل خروجی می‌گیرد."""
         if not self.download_queue:
-            QMessageBox.warning(self, "صف خالی است", "هیچ موردی در صف دانلود وجود ندارد که ذخیره شود.")
+            QMessageBox.warning(self, "صف خالی است", "هیچ موردی در صف دانلود نیست.")
             return
         self._export_data_logic(self.download_queue, file_type)
 
     def export_completed_list(self):
-        """لیست دانلود شده‌ها را در یک فایل خروجی می‌گیرد."""
         if not self.completed_downloads:
-            QMessageBox.warning(self, "لیست خالی است", "هیچ موردی در لیست دانلود شده‌ها وجود ندارد.")
+            QMessageBox.warning(self, "لیست خالی است", "هیچ موردی در لیست دانلود شده‌ها نیست.")
             return
-
         file_type, _ = QInputDialog.getItem(self, "انتخاب فرمت", "فرمت فایل را انتخاب کنید:", ["TXT", "JSON", "CSV"], 0, False)
         if file_type:
             self._export_data_logic(self.completed_downloads, file_type.lower())
-
-    def export_selected_items(self, file_type):
-        """موارد انتخاب شده از صف را در یک فایل خروجی می‌گیرد."""
-        selected_rows = [index.row() for index in self.table.selectionModel().selectedRows()]
-        if not selected_rows:
-            QMessageBox.warning(self, "هیچ انتخابی", "هیچ موردی برای ذخیره انتخاب نشده است.")
-            return
-        
-        selected_items = [self.download_queue[row] for row in selected_rows]
-        self._export_data_logic(selected_items, file_type)
 
     def _get_field_key(self, field_name):
         translation_map = {
@@ -1139,14 +1089,24 @@ class App(QWidget):
         self.id_to_row = {}
         self.save_queue()
         self.status_label.setText("صف پاک شد.")
-        
+        self.log_message("صف دانلود پاک شد.")
+
     def add_to_queue(self):
         url = self.url_input.text().strip()
         if not url:
             return
         self.add_btn.setEnabled(False)
-        self.status_label.setText("در حال دریافت اطلاعات ویدیو...")
-        threading.Thread(target=self._fetch_and_add, args=(url,)).start()
+        self.cancel_add_btn.setEnabled(True)
+        self.fetch_cancelled = False
+        self.status_label.setText("در حال دریافت اطلاعات...")
+        self.thread_pool.submit(self._fetch_and_add, url)
+
+    def cancel_add_to_queue(self):
+        self.fetch_cancelled = True
+        self.status_label.setText("اضافه کردن لغو شد.")
+        self.add_btn.setEnabled(True)
+        self.cancel_add_btn.setEnabled(False)
+        self.url_input.clear()
 
     def _fetch_and_add(self, url):
         try:
@@ -1154,39 +1114,56 @@ class App(QWidget):
             if self.settings.get("proxy"):
                 ydl_opts['proxy'] = self.settings["proxy"]
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                if self.fetch_cancelled:
+                    return
                 info = ydl.extract_info(url, download=False)
                 
+            if self.fetch_cancelled:
+                return
+
             if 'entries' in info:
                 for entry in info.get('entries') or []:
+                    if self.fetch_cancelled:
+                        return
                     if entry and entry.get('url'):
                         video_id_or_url = entry.get('url', '')
-                        # Check if the URL is already a full URL or just an ID
                         if video_id_or_url.startswith('http'):
                             full_url = video_id_or_url
                         else:
                             full_url = f"https://www.youtube.com/watch?v={video_id_or_url}"
-                        
                         entry['webpage_url'] = full_url
                         self.video_info_loaded.emit(-1, entry)
             elif info.get('webpage_url'):
                 self.video_info_loaded.emit(-1, info)
         except Exception as e:
-            self.ui_update_signal.emit(f"خطا در دریافت اطلاعات: {e}", True)
+            if not self.fetch_cancelled:
+                self.ui_update_signal.emit(f"خطا در دریافت اطلاعات: {e}", True)
+                self.log_message(f"خطا در دریافت اطلاعات: {e}")
         finally:
             self.ui_update_signal.emit("آماده.", True)
+            QMetaObject.invokeMethod(self, "reset_add_buttons", Qt.QueuedConnection)
+
+    def reset_add_buttons(self):
+        self.add_btn.setEnabled(True)
+        self.cancel_add_btn.setEnabled(False)
+        self.url_input.clear()
 
     def update_ui_from_thread(self, status_text, enable_button):
         self.status_label.setText(status_text)
-        self.add_btn.setEnabled(enable_button)
+        if enable_button:
+            self.add_btn.setEnabled(True)
+            self.cancel_add_btn.setEnabled(False)
 
     def _add_to_table_from_thread(self, row, video_info):
         url = video_info.get("webpage_url", video_info.get("url", ""))
         if any(item['url'] == url for item in self.download_queue):
+            self.log_message(f"URL تکراری: {url}")
             return
 
         filesize = video_info.get('filesize_approx', video_info.get('filesize'))
         filesize_str = format_file_size(filesize)
         duration_str = format_duration(video_info.get('duration'))
+        thumbnail_url = video_info.get('thumbnail') or video_info.get('thumbnails', [{}])[-1].get('url', '')
 
         item_id = str(uuid.uuid4())
         
@@ -1194,7 +1171,6 @@ class App(QWidget):
             "id": item_id,
             "title": video_info.get("title", "نامشخص"),
             "url": url,
-            "thumbnail_url": video_info.get("thumbnail", ""),
             "filesize_str": filesize_str,
             "duration_str": duration_str,
             "view_count": video_info.get("view_count", 0),
@@ -1204,7 +1180,9 @@ class App(QWidget):
             "format": self.settings.get("format", "ویدیو و صدا"),
             "video_format": self.settings.get("video_format", "mp4"),
             "subtitle_lang": self.settings.get("subtitle_lang", "هیچ"),
-            "download_path": None
+            "download_path": None,
+            "thumbnail_url": thumbnail_url,
+            "downloaded_size": "0 B"  # مقدار اولیه حجم دانلود شده
         }
 
         ext = 'mp3' if item["format"] == "فقط صدا" else item["video_format"]
@@ -1212,17 +1190,28 @@ class App(QWidget):
         if exists:
             item['status'] = "دانلود شده"
             item['download_path'] = path
-
-        self.download_queue.append(item)
-        self.id_to_row[item_id] = self.table.rowCount()
-        self.save_queue()
+            self.completed_downloads.append(item)
+            self.update_completed_table_row(self.completed_table.rowCount(), item)
+        else:
+            partial_exists, part_path = check_partial_file(self.settings.get("save_folder"), item['title'], ext)
+            if partial_exists:
+                item['status'] = "متوقف شده"
+                # تخمین حجم دانلود شده از فایل part
+                if os.path.exists(part_path):
+                    item['downloaded_size'] = format_file_size(os.path.getsize(part_path))
+            self.download_queue.append(item)
+            self.id_to_row[item_id] = self.table.rowCount()
+            self.table.setRowCount(self.table.rowCount() + 1)
+            self.update_table_row(self.table.rowCount() - 1, item)
         
-        self.table.setRowCount(self.table.rowCount() + 1)
-        self.update_table_row(self.table.rowCount() - 1, item)
+        self.save_queue()
         self.status_label.setText(f"'{item['title']}' به صف اضافه شد.")
+        self.log_message(f"اضافه شدن به صف: {item['title']}")
 
     def _fetch_and_add_list(self, urls):
         for url in urls:
+            if self.fetch_cancelled:
+                return
             try:
                 ydl_opts = {'quiet': True, 'force_generic_extractor': False}
                 if self.settings.get("proxy"):
@@ -1230,15 +1219,13 @@ class App(QWidget):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
                     self.video_info_loaded.emit(-1, info)
-            except Exception:
-                pass
+            except Exception as e:
+                self.log_message(f"خطا در دریافت اطلاعات URL {url}: {e}")
         self.ui_update_signal.emit("وارد کردن آدرس‌ها به پایان رسید.", True)
 
     def restore_queue_to_table(self):
         self.table.setRowCount(len(self.download_queue))
         for row, item in enumerate(self.download_queue):
-            item.setdefault('id', str(uuid.uuid4()))
-            item.setdefault('subtitle_lang', self.settings.get("subtitle_lang", "هیچ"))
             self.id_to_row[item['id']] = row
             self.update_table_row(row, item)
         self.load_visible_thumbnails()
@@ -1252,19 +1239,31 @@ class App(QWidget):
         quality_combo = QComboBox()
         quality_combo.addItems(QUALITY_OPTIONS)
         quality_combo.setCurrentText(item.get("quality", "بهترین"))
+        quality_combo.currentTextChanged.connect(lambda text: self._update_item_field(row, 'quality', text))
         self.table.setCellWidget(row, 4, quality_combo)
         
         format_combo = QComboBox()
         format_combo.addItems(FORMAT_OPTIONS)
         format_combo.setCurrentText(item.get("format", self.settings.get("format", "ویدیو و صدا")))
+        format_combo.currentTextChanged.connect(lambda text: self._update_item_field(row, 'format', text))
         self.table.setCellWidget(row, 5, format_combo)
         
         subtitle_combo = QComboBox()
         subtitle_combo.addItems(SUBTITLE_LANGS)
         subtitle_combo.setCurrentText(item.get("subtitle_lang", "هیچ"))
+        subtitle_combo.currentTextChanged.connect(lambda text: self._update_item_field(row, 'subtitle_lang', text))
         self.table.setCellWidget(row, 6, subtitle_combo)
         
         self.table.setItem(row, 7, QTableWidgetItem(item.get("status")))
+        self.table.setCellWidget(row, 8, QProgressBar())
+        self.table.setItem(row, 9, QTableWidgetItem(item.get("downloaded_size", "0 B")))  # ستون حجم دانلود شده
+        self.table.setItem(row, 10, QTableWidgetItem(""))  # سرعت
+        self.table.setItem(row, 11, QTableWidgetItem(""))  # زمان باقی‌مانده
+
+    def _update_item_field(self, row, field, value):
+        if 0 <= row < len(self.download_queue):
+            self.download_queue[row][field] = value
+            self.save_queue()
 
     def filter_table(self, text):
         for row in range(self.table.rowCount()):
@@ -1283,6 +1282,7 @@ class App(QWidget):
         self.start_download_btn.setEnabled(False)
         self.cancel_download_btn.setEnabled(True)
         self.status_label.setText("شروع دانلودها...")
+        self.log_message("شروع دانلود تمام موارد در صف.")
         self._start_next_downloads()
 
     def start_selected_downloads(self):
@@ -1292,19 +1292,20 @@ class App(QWidget):
         selected_rows = [index.row() for index in self.table.selectionModel().selectedRows()]
         for row in selected_rows:
             item = self.download_queue[row]
-            if item['status'] in ["در صف", "خطا", "لغو شده"]:
-                self._start_single_download(row, item)
+            if item['status'] in ["در صف", "خطا", "لغو شده", "متوقف شده"]:
+                self._start_single_download(row, item, resume=item['status'] == "متوقف شده")
+                self.log_message(f"شروع دانلود انتخاب شده: {item['title']}")
 
     def _start_next_downloads(self):
         concurrency = self.settings.get("concurrency", 3)
         while len(self.active_downloads) < concurrency:
-            next_item_tuple = next(((i, item) for i, item in enumerate(self.download_queue) if item['status'] == "در صف"), None)
+            next_item_tuple = next(((i, item) for i, item in enumerate(self.download_queue) if item['status'] == "در صف" or item['status'] == "متوقف شده"), None)
             if not next_item_tuple:
                 break
             row, item = next_item_tuple
-            self._start_single_download(row, item)
-    
-    def _start_single_download(self, row, item):
+            self._start_single_download(row, item, resume=item['status'] == "متوقف شده")
+
+    def _start_single_download(self, row, item, resume=False):
         if item['status'] == "دانلود شده":
             return
         
@@ -1315,13 +1316,19 @@ class App(QWidget):
         
         item['status'] = "در حال دانلود..."
         self.table.setItem(row, 7, QTableWidgetItem("در حال دانلود..."))
+        progress_bar = self.table.cellWidget(row, 8)
+        if progress_bar:
+            if not resume:
+                progress_bar.setValue(0)
 
         safe_title = "".join(c for c in item['title'] if c.isalnum() or c in " ._()")
         ydl_opts = {
-            'outtmpl': os.path.join(self.settings.get("save_folder"), f'{safe_title}.%(ext)s'),
+            'outtmpl': {'default': os.path.join(self.settings.get("save_folder"), f'{safe_title}.%(ext)s')},
             'retries': 10,
             'fragment_retries': 10,
-            'quiet': False
+            'quiet': False,
+            'continuedl': True,
+            'nooverwrites': False  # اجازه بازنویسی فایل‌های ناقص
         }
         if self.settings.get("proxy"):
             ydl_opts['proxy'] = self.settings["proxy"]
@@ -1353,12 +1360,6 @@ class App(QWidget):
         if ffmpeg_path:
             ydl_opts['ffmpeg_location'] = ffmpeg_path
 
-        self.table.setCellWidget(row, 8, QProgressBar())
-        
-        cancel_btn = QPushButton("لغو")
-        cancel_btn.clicked.connect(lambda checked, r=row: self.cancel_single_download(r))
-        self.table.setCellWidget(row, 11, cancel_btn)
-
         downloader = DownloaderThread(item['id'], item['url'], ydl_opts)
         downloader.download_progress.connect(self.on_download_progress)
         downloader.postprocess_progress.connect(self.on_postprocess_progress)
@@ -1376,43 +1377,74 @@ class App(QWidget):
 
     def on_download_progress(self, d):
         row = self.id_to_row.get(d['id'])
-        if row is None or row >= self.table.rowCount(): return
+        if row is None or row >= self.table.rowCount():
+            return
 
-        progress_bar = self.table.cellWidget(row, 8)
-        if progress_bar and d['status'] == 'downloading':
+        if d['status'] == 'downloading':
             try:
                 percent = float(d.get('_percent_str', '0%').strip().replace('%', ''))
-                progress_bar.setValue(int(percent))
-                speed_str = d.get('_speed_str', '').strip().replace(' ', '')  # Ensure speed is cleaned and displayed
-                self.table.setItem(row, 9, QTableWidgetItem(speed_str))
-                self.table.setItem(row, 10, QTableWidgetItem(d.get('_eta_str', '')))
-            except (ValueError, AttributeError): pass
+                downloaded = d.get('downloaded_bytes', 0)
+                speed = d.get('speed')
+                eta = d.get('eta')
+                downloaded_str = format_file_size(downloaded)
+                speed_str = format_speed(speed)
+                eta_str = format_eta(eta)
+                # به‌روزرسانی فوری UI بدون تاخیر
+                self.update_progress.emit(d['id'], percent, downloaded_str, speed_str, eta_str)
+            except (ValueError, AttributeError):
+                pass
+
+    def _update_progress_ui(self, item_id, percent, downloaded_str, speed_str, eta_str):
+        row = self.id_to_row.get(item_id)
+        if row is None or row >= self.table.rowCount():
+            return
+        progress_bar = self.table.cellWidget(row, 8)
+        if progress_bar:
+            progress_bar.setValue(int(percent))
+        self.table.setItem(row, 9, QTableWidgetItem(downloaded_str))  # حجم دانلود شده
+        self.table.setItem(row, 10, QTableWidgetItem(speed_str))  # سرعت
+        self.table.setItem(row, 11, QTableWidgetItem(eta_str))  # زمان باقی‌مانده
+        # به‌روزرسانی item در queue برای حفظ حجم دانلود شده
+        if 0 <= row < len(self.download_queue):
+            self.download_queue[row]['downloaded_size'] = downloaded_str
+        self.save_queue()  # ذخیره فوری برای حفظ داده
+        self.log_message(f"پیشرفت دانلود [{self.download_queue[row]['title']}]: {percent:.2f}% - حجم: {downloaded_str} - سرعت: {speed_str} - باقی‌مانده: {eta_str}")
 
     def on_postprocess_progress(self, d):
         row = self.id_to_row.get(d['id'])
-        if row is None or row >= self.table.rowCount(): return
+        if row is None or row >= self.table.rowCount():
+            return
         progress_bar = self.table.cellWidget(row, 8)
         if progress_bar:
-            progress_bar.setValue(100 if d['status'] == 'finished' else 50)
+            value = 100 if d['status'] == 'finished' else 50
+            progress_bar.setValue(value)
+            self.table.setItem(row, 10, QTableWidgetItem(""))  # پاک کردن سرعت
+            self.table.setItem(row, 11, QTableWidgetItem(""))  # پاک کردن ETA
+            self.log_message(f"پردازش پس از دانلود [{d.get('filename', 'نامشخص')}]: وضعیت {d['status']}")
 
     def on_download_finished(self, info_dict):
         item_id = info_dict['id']
         thread_index = self._find_thread_by_id(item_id)
-        if thread_index != -1: self.active_downloads.pop(thread_index)
+        if thread_index != -1:
+            self.active_downloads.pop(thread_index)
         
         row = self.id_to_row.get(item_id)
         if row is not None:
             item = self.download_queue.pop(row)
-            item['status'] = "پایان یافت"
-            item['download_path'] = info_dict.get('filepath') or info_dict.get('_filename')
+            item['status'] = "دانلود شده"
+            item['download_path'] = info_dict.get('filepath')
+            # حفظ حجم نهایی دانلود شده
+            item['downloaded_size'] = item.get('filesize_str', 'نامشخص')
             self.completed_downloads.append(item)
             self.table.removeRow(row)
             self._update_id_to_row_map()
             self.update_completed_table_row(self.completed_table.rowCount(), item)
+            self.log_message(f"دانلود پایان یافت: {item['title']} - مسیر: {item['download_path']}")
 
         self.save_queue()
         self.check_all_finished()
-        if self.downloading_all: self._start_next_downloads()
+        if self.downloading_all:
+            self._start_next_downloads()
 
     def update_completed_table_row(self, row, item):
         self.completed_table.setRowCount(row + 1)
@@ -1423,47 +1455,66 @@ class App(QWidget):
         self.completed_table.setItem(row, 4, QTableWidgetItem(item.get("quality")))
         self.completed_table.setItem(row, 5, QTableWidgetItem(item.get("status")))
         date_str = item.get('upload_date', '')
-        if date_str: self.completed_table.setItem(row, 6, QTableWidgetItem(f"{date_str[:4]}/{date_str[4:6]}/{date_str[6:]}"))
+        if date_str:
+            self.completed_table.setItem(row, 6, QTableWidgetItem(f"{date_str[:4]}/{date_str[4:6]}/{date_str[6:]}"))
         self.completed_table.setItem(row, 7, QTableWidgetItem(item.get("download_path")))
-        
+
     def on_download_error(self, error_msg, item_id):
-        self._handle_download_end(item_id, "خطا", error_msg)
+        self._handle_download_end(item_id, "خطا", error_msg, is_pause=False)
 
     def on_download_cancelled(self, item_id):
-        self._handle_download_end(item_id, "لغو شده", "دانلود توسط کاربر لغو شد.")
-    
-    def _handle_download_end(self, item_id, status, message):
+        row = self.id_to_row.get(item_id)
+        if row is not None:
+            item = self.download_queue[row]
+            if item['status'] == "در حال دانلود...":
+                thread = next((t for t in self.active_downloads if t.id == item_id), None)
+                if thread:
+                    if thread.is_paused:
+                        self._handle_download_end(item_id, "متوقف شده", "دانلود متوقف شد.", is_pause=True)
+                    else:
+                        self._handle_download_end(item_id, "لغو شده", "دانلود لغو شد.", is_pause=False)
+
+    def _handle_download_end(self, item_id, status, message, is_pause=False):
         thread_index = self._find_thread_by_id(item_id)
-        if thread_index != -1: self.active_downloads.pop(thread_index)
+        if thread_index != -1:
+            thread = self.active_downloads.pop(thread_index)
+            thread.wait()
 
         row = self.id_to_row.get(item_id)
         if row is not None and row < self.table.rowCount():
             item = self.download_queue[row]
             self.table.setItem(row, 7, QTableWidgetItem(status))
+            self.table.setItem(row, 10, QTableWidgetItem(""))  # Clear speed
+            self.table.setItem(row, 11, QTableWidgetItem(""))  # Clear ETA
+            # حفظ حجم دانلود شده در item و سلول (حتی پس از لغو)
+            downloaded_item = self.table.item(row, 9)
+            if downloaded_item:
+                item['downloaded_size'] = downloaded_item.text()
             item['status'] = status
-            cancel_btn = self.table.cellWidget(row, 11)
-            if cancel_btn: cancel_btn.setEnabled(False)
-            ext = 'mp3' if item.get('format') == "فقط صدا" else item.get('video_format', 'mp4')
-            delete_partial_files(self.settings.get("save_folder"), item['title'], ext)
-            self.log_message(f"'{item['title']}': {message}")
+            if not is_pause and status == "لغو شده" and self.settings.get("delete_partial_on_cancel", False):
+                ext = 'mp3' if item.get('format') == "فقط صدا" else item.get('video_format', 'mp4')
+                delete_partial_files(self.settings.get("save_folder"), item['title'], ext)
+            self.log_message(f"'{item['title']}': {message} - وضعیت: {status}")
         
         self.save_queue()
         self.check_all_finished()
-        if self.downloading_all: self._start_next_downloads()
+        if self.downloading_all:
+            self._start_next_downloads()
 
     def _find_thread_by_id(self, item_id):
         return next((i for i, thread in enumerate(self.active_downloads) if thread.id == item_id), -1)
-        
+
     def remove_selected_items(self):
         selected_rows = sorted([index.row() for index in self.table.selectionModel().selectedRows()], reverse=True)
         for row in selected_rows:
             self.remove_single_item(row)
+            self.log_message(f"حذف مورد از صف: ردیف {row}")
 
     def remove_single_item(self, row):
-        if not (0 <= row < self.table.rowCount()): return
+        if not (0 <= row < self.table.rowCount()):
+            return
         item = self.download_queue[row]
         self.cancel_single_download(row)
-        
         del self.id_to_row[item['id']]
         del self.download_queue[row]
         self.table.removeRow(row)
@@ -1473,24 +1524,47 @@ class App(QWidget):
     def _update_id_to_row_map(self):
         self.id_to_row = {item['id']: i for i, item in enumerate(self.download_queue)}
 
+    def pause_single_download(self, row):
+        if 0 <= row < len(self.download_queue):
+            item = self.download_queue[row]
+            thread_index = self._find_thread_by_id(item['id'])
+            if thread_index != -1:
+                self.active_downloads[thread_index].is_paused = True
+                self.active_downloads[thread_index].wait()
+                self.log_message(f"مکث دانلود: {item['title']}")
+                self._handle_download_end(item['id'], "متوقف شده", "دانلود مکث شد.", is_pause=True)
+
+    def resume_single_download(self, row):
+        if 0 <= row < len(self.download_queue):
+            item = self.download_queue[row]
+            if item['status'] == "متوقف شده":
+                self._start_single_download(row, item, resume=True)
+                self.log_message(f"ادامه دانلود: {item['title']}")
+
     def cancel_single_download(self, row):
         if 0 <= row < len(self.download_queue):
             item = self.download_queue[row]
             thread_index = self._find_thread_by_id(item['id'])
             if thread_index != -1:
                 self.active_downloads[thread_index].is_cancelled = True
+                self.active_downloads[thread_index].wait()
+                self.log_message(f"لغو دانلود تکی: {item['title']}")
 
     def start_single_download_from_menu(self, row):
         if 0 <= row < len(self.download_queue):
             self.downloading_all = False
             item = self.download_queue[row]
-            if item['status'] in ["در صف", "خطا", "لغو شده"]:
-                self._start_single_download(row, item)
+            if item['status'] in ["در صف", "خطا", "لغو شده", "متوقف شده"]:
+                self._start_single_download(row, item, resume=item['status'] == "متوقف شده")
+                self.log_message(f"شروع دانلود از منو: {item['title']}")
 
     def cancel_all_downloads(self):
         for thread in list(self.active_downloads):
             thread.is_cancelled = True
+            thread.wait()
         self.downloading_all = False
+        self.log_message("لغو تمام دانلودها.")
+        self.check_all_finished()
 
     def check_all_finished(self):
         if not self.active_downloads and not any(q['status'] == "در حال دانلود..." for q in self.download_queue):
@@ -1498,33 +1572,42 @@ class App(QWidget):
             self.cancel_download_btn.setEnabled(False)
             self.start_download_btn.setEnabled(True)
             self.downloading_all = False
+            self.log_message("تمام عملیات دانلود به پایان رسید.")
 
     def check_dependencies(self, silent=True):
         self.yt_dlp_version = get_yt_dlp_version()
         self.ffmpeg_version = get_ffmpeg_version()
         if not self.yt_dlp_version:
-            if not silent: QMessageBox.critical(self, "وابستگی", "yt-dlp نصب نیست. لطفاً با 'pip install yt-dlp' نصب کنید.")
+            if not silent:
+                QMessageBox.critical(self, "وابستگی", "yt-dlp نصب نیست. لطفاً با 'pip install yt-dlp' نصب کنید.")
             return False
         if not self.ffmpeg_version:
-            if not silent: QMessageBox.warning(self, "وابستگی", "ffmpeg نصب نیست. برای تبدیل فرمت‌ها لازم است.")
+            if not silent:
+                QMessageBox.warning(self, "وابستگی", "ffmpeg نصب نیست. برای تبدیل فرمت‌ها لازم است.")
         return True
-    
+
+    def _refresh_ui(self):
+        for row in range(self.table.rowCount()):
+            progress_bar = self.table.cellWidget(row, 8)
+            item = self.download_queue[row]
+            if progress_bar and progress_bar.value() == 0 and item['status'] != "در حال دانلود...":
+                self.table.setItem(row, 10, QTableWidgetItem(""))  # Clear speed
+                self.table.setItem(row, 11, QTableWidgetItem(""))  # Clear ETA
+                # حجم دانلود شده حفظ می‌شود و پاک نمی‌شود
+
     def closeEvent(self, event):
         self.cancel_all_downloads()
-        for thread in self.active_downloads:
-            thread.wait() # Wait for cancellation to complete
-        
+        self.ui_timer.stop()
         self.save_settings()
         self.thread_pool.shutdown(wait=True)
-        
         if self.settings.get("clear_on_exit", False):
-            if os.path.exists(CONFIG_PATH): os.remove(CONFIG_PATH)
-            if os.path.exists(QUEUE_PATH): os.remove(QUEUE_PATH)
-
+            if os.path.exists(QUEUE_PATH):
+                os.remove(QUEUE_PATH)
+                self.log_message("صف دانلود هنگام خروج پاک شد.")
         event.accept()
 
     def load_visible_thumbnails(self):
-        pass  # اگر تابعی برای بارگذاری تامنیل‌ها لازم بود، اینجا پیاده‌سازی شود
+        pass  # اگر لازم شد، اینجا پیاده‌سازی شود
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
