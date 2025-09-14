@@ -28,7 +28,7 @@
 ### اجرای مستقیم
 1. مخزن را کلون کنید:
    ```bash
-   git clone https://github.com/NoirMorphm/YouTubeDownloader.git
+   git clone https://github.com/NoirMorph/YTDL-GUI.git
    cd YouTubeDownloader
    ```
 2. وابستگی‌ها را نصب کنید:
@@ -57,7 +57,7 @@ pyinstaller --name YouTubeDownloader `
     --hidden-import PySide6.QtGui `
     --hidden-import PySide6.QtWidgets `
     --hidden-import PySide6.QtCore `
-    .\bugfixed.py
+    .\YTDL-GUI.py
 ```
 
 ### ایجاد نصب‌کننده ویندوز
@@ -127,7 +127,7 @@ To run or build the YouTubeDownloader application, ensure the following are inst
 ### Running from Source
 1. Clone the repository:
    ```bash
-   git clone https://github.com/NoirMorphm/YouTubeDownloader.git
+   git clone https://github.com/NoirMorph/YTDL-GUI.git
    cd YouTubeDownloader
    ```
 
@@ -164,7 +164,7 @@ pyinstaller --name YouTubeDownloader `
     --hidden-import PySide6.QtGui `
     --hidden-import PySide6.QtWidgets `
     --hidden-import PySide6.QtCore `
-    .\bugfixed.py
+    .\YTDL-GUI.py
 ```
 
 - The executable will be created in the `dist/` folder as `YouTubeDownloader.exe`.
