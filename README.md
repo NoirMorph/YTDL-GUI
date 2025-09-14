@@ -141,7 +141,7 @@ Contributions are welcome! To contribute:
 This project is licensed under the MIT License. See the `LICENSE` file for details.
 
 ## Contact
-For questions or support, contact [NoirMorph](https://github.com/NoirMorphm) or open an issue on GitHub.
+For questions or support, contact [NoirMorph](https://github.com/NoirMorph) or open an issue on GitHub.
 
 ---
 
@@ -230,4 +230,4 @@ pyinstaller --name YouTubeDownloader `
 - **کند بودن تبدیل فرمت**: از فرمت `webm` استفاده کنید.
 
 ## تماس
-برای پشتیبانی، با [NoirMorph](https://github.com/NoirMorphm) تماس بگیرید یا یک Issue در GitHub باز کنید.
+برای پشتیبانی، با [NoirMorph](https://github.com/NoirMorph) تماس بگیرید یا یک Issue در GitHub باز کنید.
