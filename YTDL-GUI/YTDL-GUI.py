@@ -1,4 +1,3 @@
-
 import sys
 import os
 import json
@@ -9,7 +8,7 @@ import subprocess
 import csv
 import time
 import uuid
-import hashlib
+import re
 import zipfile
 import tarfile
 import platform
@@ -28,17 +27,16 @@ from PySide6.QtCore import Qt, QThread, Signal, QTimer, QMetaObject, QEvent
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import yt_dlp
 
 # ---------------- Color Variables ----------------
-DARK_COLOR_PRIMARY = "#5682B1"
+DARK_COLOR_PRIMARY = "#2979FF"
 DARK_COLOR_SECONDARY = "#739EC9"
-DARK_COLOR_PRIMARY_DARK = "#616161"
+DARK_COLOR_PRIMARY_DARK = "#78909C"
 DARK_COLOR_DANGER = "#CF6679"
-DARK_COLOR_NEUTRAL = "#B3B3B3"
+DARK_COLOR_NEUTRAL = "#4FC3F7"
 DARK_COLOR_BACKGROUND = "#121212"
 DARK_COLOR_TEXT = "#f8fafc"
-DARK_COLOR_TEXT_MENU = "#f8fafc"
+DARK_COLOR_TEXT_MENU = "#64B5F6"
 DARK_COLOR_ACCENT = "#44444E"
 DARK_COLOR_SURFACE = "#1E1E1E"
 DARK_COLOR_GRID = "#333333"
@@ -47,12 +45,12 @@ DARK_COLOR_ALTERNATE = "#2A2A2A"
 
 LIGHT_COLOR_PRIMARY = "#2196F3"
 LIGHT_COLOR_SECONDARY = "#4CAF50"
-LIGHT_COLOR_PRIMARY_DARK = "#616161"
+LIGHT_COLOR_PRIMARY_DARK = "#90A4AE"
 LIGHT_COLOR_DANGER = "#F44336"
-LIGHT_COLOR_NEUTRAL = "#757575"
+LIGHT_COLOR_NEUTRAL = "#29B6F6"
 LIGHT_COLOR_BACKGROUND = "#FFFFFF"
 LIGHT_COLOR_TEXT = "#020618"
-LIGHT_COLOR_TEXT_MENU = "#020618"
+LIGHT_COLOR_TEXT_MENU = "#42A5F5"
 LIGHT_COLOR_ACCENT = "#FFEB3B"
 LIGHT_COLOR_SURFACE = "#F5F5F5"
 LIGHT_COLOR_GRID = "#E0E0E0"
@@ -60,10 +58,38 @@ LIGHT_COLOR_HOVER = "#E3F2FD"
 LIGHT_COLOR_ALTERNATE = "#FAFAFA"
 
 # ---------------- Constants ----------------
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".youtube_downloader_config.json")
-QUEUE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".youtube_downloader_queue.json")
-THUMB_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".youtube_downloader_thumbs")
-FFMPEG_DIR = os.path.join(os.path.expanduser("~"), ".ffmpeg_bin")
+def get_app_dir():
+    if getattr(sys, 'frozen', False):
+        # PyInstaller bundle
+        return os.path.dirname(sys.executable)
+    else:
+        # Development
+        return os.path.dirname(os.path.abspath(__file__))
+
+def get_user_data_dir(app_name="YouTubeDownloader"):
+    """Get user-specific data directory for config/cache files."""
+    system = platform.system().lower()
+    if system == "windows":
+        # Use %APPDATA%\AppName
+        return os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), app_name)
+    elif system == "darwin":
+        # Use ~/Library/Application Support/AppName
+        return os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', app_name)
+    else:  # Linux/Unix
+        # Use ~/.config/AppName
+        return os.path.join(os.path.expanduser('~'), '.config', app_name)
+
+CONFIG_DIR = os.path.join(get_user_data_dir(), ".youtube_downloader")
+os.makedirs(CONFIG_DIR, exist_ok=True)
+CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
+QUEUE_PATH = os.path.join(CONFIG_DIR, "queue.json")
+THUMB_CACHE_DIR = os.path.join(get_user_data_dir(), ".youtube_downloader_thumbs")
+os.makedirs(THUMB_CACHE_DIR, exist_ok=True)
+FFMPEG_DIR = os.path.join(get_user_data_dir(), "ffmpeg_bin")
+
+YTDLP_NAME = "yt-dlp.exe" if platform.system().lower() == "windows" else "yt-dlp"
+FFMPEG_NAME = "ffmpeg.exe" if platform.system().lower() == "windows" else "ffmpeg"
+
 QUALITY_OPTIONS = ["بهترین", "بدترین", "1080p", "720p", "480p", "360p", "144p"]
 FORMAT_OPTIONS = ["ویدیو و صدا", "فقط صدا"]
 VIDEO_FORMAT_OPTIONS = ["mp4", "mkv", "mov", "avi", "webm"]
@@ -78,6 +104,46 @@ def resource_path(relative_path):
     except AttributeError:
         base_path = os.path.abspath(os.path.dirname(__file__))
     return os.path.join(base_path, relative_path)
+
+def download_with_progress(url, download_path, tool_name):
+    """Download with progress logging."""
+    try:
+        response = requests.get(url, stream=True, timeout=(30, 300))
+        response.raise_for_status()
+        total_size = int(response.headers.get('content-length', 0))
+        downloaded_size = 0
+
+        with open(download_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    downloaded_size += len(chunk)
+                    if total_size > 0:
+                        percent = (downloaded_size / total_size) * 100
+                        print(f"[{tool_name}] Downloaded {percent:.1f}% ({format_file_size(downloaded_size)} / {format_file_size(total_size)})", end='\r')
+                        logging.info(f"[{tool_name}] {percent:.1f}%")
+        print(f"\n[{tool_name}] Download completed.")
+        logging.info(f"[{tool_name}] Download completed.")
+    except Exception as e:
+        if os.path.exists(download_path):
+            os.remove(download_path)
+        raise IOError(f"خطا در دانلود {tool_name}: {e}")
+
+def download_yt_dlp():
+    system = platform.system().lower()
+    if system == "windows":
+        url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+    else:
+        url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
+    app_dir = get_app_dir()
+    download_path = os.path.join(app_dir, YTDLP_NAME + ".tmp")
+    download_with_progress(url, download_path, "yt-dlp")
+    final_path = os.path.join(app_dir, YTDLP_NAME)
+    os.replace(download_path, final_path)
+    if not system == "windows":
+        os.chmod(final_path, 0o755)
+    logging.info(f"yt-dlp downloaded to {final_path}")
+    return final_path
 
 def download_ffmpeg():
     system = platform.system().lower()
@@ -98,75 +164,118 @@ def download_ffmpeg():
     else:
         raise OSError("سیستم عامل پشتیبانی نمی‌شود.")
     
-    download_path = os.path.join(FFMPEG_DIR, f"ffmpeg{file_ext}")
-    os.makedirs(FFMPEG_DIR, exist_ok=True)
+    app_dir = get_app_dir()
+    os.makedirs(os.path.join(app_dir, "ffmpeg_bin"), exist_ok=True)
+    download_path = os.path.join(app_dir, f"ffmpeg{file_ext}.tmp")
     
-    response = requests.get(url, stream=True, timeout=30)
-    if response.status_code == 200:
-        with open(download_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-    else:
-        raise IOError("خطا در دانلود ffmpeg.")
+    download_with_progress(url, download_path, "ffmpeg")
     
-    if file_ext == ".zip":
-        with zipfile.ZipFile(download_path, 'r') as zip_ref:
-            zip_ref.extractall(FFMPEG_DIR)
-    elif file_ext == ".tar.xz":
-        with tarfile.open(download_path, 'r:xz') as tar_ref:
-            tar_ref.extractall(FFMPEG_DIR)
+    zip_path = download_path.replace('.tmp', '')
+    os.replace(download_path, zip_path)
     
-    for root, _, files in os.walk(FFMPEG_DIR):
-        for file in files:
-            if file in ["ffmpeg", "ffmpeg.exe", "ffprobe", "ffprobe.exe", "ffplay", "ffplay.exe"]:
-                shutil.copy(os.path.join(root, file), FFMPEG_DIR)
+    try:
+        if file_ext == ".zip":
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(app_dir)
+        elif file_ext == ".tar.xz":
+            with tarfile.open(zip_path, 'r:xz') as tar_ref:
+                tar_ref.extractall(app_dir)
+        
+        # Copy binaries to app dir
+        for root, _, files in os.walk(app_dir):
+            for file in files:
+                if file in [FFMPEG_NAME, "ffprobe", "ffprobe.exe", "ffplay", "ffplay.exe"]:
+                    src = os.path.join(root, file)
+                    dst = os.path.join(app_dir, file)
+                    shutil.copy(src, dst)
+                    if not system == "windows":
+                        os.chmod(dst, 0o755)
+        
+        os.remove(zip_path)
+        # Clean up extracted dir if any
+        extracted_dir = os.path.join(app_dir, "ffmpeg-" + re.search(r'ffmpeg-([\d.-]+)', zip_path).group(1)) if re.search(r'ffmpeg-([\d.-]+)', zip_path) else None
+        if extracted_dir and os.path.exists(extracted_dir):
+            shutil.rmtree(extracted_dir)
+    except Exception as e:
+        raise IOError(f"خطا در استخراج ffmpeg: {e}")
     
-    os.remove(download_path)
-    return os.path.join(FFMPEG_DIR, "ffmpeg" if system != "windows" else "ffmpeg.exe")
+    final_path = os.path.join(app_dir, FFMPEG_NAME)
+    logging.info(f"ffmpeg downloaded to {final_path}")
+    return final_path
+
+def get_yt_dlp_path():
+    # Check system PATH
+    yt_path = shutil.which(YTDLP_NAME)
+    if yt_path:
+        logging.info(f"yt-dlp found in system PATH: {yt_path}")
+        return yt_path
+    
+    # Check app dir
+    app_yt_path = os.path.join(get_app_dir(), YTDLP_NAME)
+    if os.path.exists(app_yt_path):
+        logging.info(f"yt-dlp found in app dir: {app_yt_path}")
+        return app_yt_path
+    
+    # Download
+    logging.info("yt-dlp not found, downloading...")
+    try:
+        return download_yt_dlp()
+    except Exception as e:
+        logging.error(f"Failed to download yt-dlp: {e}")
+        return None
 
 def get_ffmpeg_path():
-    system = platform.system().lower()
-    ffmpeg_name = "ffmpeg.exe" if system == "windows" else "ffmpeg"
-    ffmpeg_path = resource_path(os.path.join("ffmpeg_bin", ffmpeg_name))
+    # Check system PATH
+    ff_path = shutil.which(FFMPEG_NAME)
+    if ff_path:
+        logging.info(f"ffmpeg found in system PATH: {ff_path}")
+        return ff_path
     
-    if os.path.exists(ffmpeg_path):
-        if system != "windows":
+    # Check app dir
+    app_ff_path = os.path.join(get_app_dir(), FFMPEG_NAME)
+    if os.path.exists(app_ff_path):
+        logging.info(f"ffmpeg found in app dir: {app_ff_path}")
+        if platform.system().lower() != "windows":
             try:
-                os.chmod(ffmpeg_path, 0o755)
+                os.chmod(app_ff_path, 0o755)
             except OSError as e:
-                logging.error(f"خطا در تنظیم مجوزهای ffmpeg: {e}")
-                QMessageBox.critical(None, "خطا", f"خطا در تنظیم مجوزهای ffmpeg: {e}")
-                return None
-        return ffmpeg_path
+                logging.error(f"Error setting permissions for ffmpeg: {e}")
+        return app_ff_path
     
+    # Download
+    logging.info("ffmpeg not found, downloading...")
     try:
         return download_ffmpeg()
     except Exception as e:
-        logging.error(f"خطا در دانلود ffmpeg: {e}")
-        QMessageBox.critical(None, "خطا", "ffmpeg یافت نشد و دانلود آن ناموفق بود.")
+        logging.error(f"Failed to download ffmpeg: {e}")
         return None
 
 def get_yt_dlp_version():
+    path = get_yt_dlp_path()
+    if not path:
+        return None
     try:
-        creation_flags = 0
-        if os.name == "nt":
-            creation_flags = subprocess.CREATE_NO_WINDOW
-        result = subprocess.run(['yt-dlp', '--version'], capture_output=True, text=True, check=True, creationflags=creation_flags)
-        return result.stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
+        result = subprocess.run([path, '--version'], capture_output=True, text=True, check=False)
+        version = result.stdout.strip().split('\n')[0] if result.returncode == 0 else None
+        logging.info(f"yt-dlp version: {version}")
+        return version
+    except Exception as e:
+        logging.error(f"Error getting yt-dlp version: {e}")
         return None
 
 def get_ffmpeg_version():
-    ffmpeg_path = get_ffmpeg_path()
-    if not ffmpeg_path:
+    path = get_ffmpeg_path()
+    if not path:
         return None
     try:
-        creation_flags = 0
-        if os.name == "nt":
-            creation_flags = subprocess.CREATE_NO_WINDOW
-        result = subprocess.run([ffmpeg_path, '-version'], capture_output=True, text=True, check=False, creationflags=creation_flags)
-        return "installed" if result.returncode == 0 else None
-    except FileNotFoundError:
+        creation_flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        result = subprocess.run([path, '-version'], capture_output=True, text=True, check=False, creationflags=creation_flags)
+        version = "installed" if result.returncode == 0 else None
+        if version:
+            logging.info("ffmpeg version: installed")
+        return version
+    except Exception as e:
+        logging.error(f"Error getting ffmpeg version: {e}")
         return None
 
 def load_json_file(file_path, default_data=None):
@@ -297,58 +406,149 @@ class DownloaderThread(QThread):
     download_error = Signal(str, str)
     download_cancelled = Signal(str)
     download_step = Signal(str, str)
+    log_line = Signal(str)
 
-    def __init__(self, id, url, ydl_opts, parent=None):
+    def __init__(self, id, url, ydl_opts, yt_dlp_path, ffmpeg_path, parent=None):
         super().__init__(parent)
         self.id = id
         self.url = url
         self.ydl_opts = ydl_opts
+        self.yt_dlp_path = yt_dlp_path
+        self.ffmpeg_path = ffmpeg_path
         self.is_cancelled = False
         self.is_paused = False
+        self.lock = threading.Lock()
+        self.process = None
+        self.filename = None
 
     def run(self):
-        def progress_hook(d):
+        with self.lock:
             if self.is_cancelled or self.is_paused:
-                raise yt_dlp.utils.DownloadCancelled("Download cancelled or paused by user")
-            d['id'] = self.id
-            d['phase'] = 'download'
-            self.download_progress.emit(d)
+                self.download_cancelled.emit(self.id)
+                return
 
-        def postprocessor_hook(d):
+        self.download_step.emit(self.id, "استخراج اطلاعات...")
+
+        # Extract info using yt-dlp -J
+        try:
+            cmd_extract = [self.yt_dlp_path, "-j", self.url]
+            result = subprocess.run(cmd_extract, capture_output=True, text=True, check=True)
+            info_dict = json.loads(result.stdout.strip())
+            self.log_line.emit(f"Extracted info for {info_dict.get('title', 'Unknown')}")
+        except subprocess.CalledProcessError as e:
+            self.download_error.emit(f"خطا در استخراج اطلاعات: {e.stderr}", self.id)
+            return
+        except Exception as e:
+            self.download_error.emit(f"خطای غیرمنتظره در استخراج: {e}", self.id)
+            return
+
+        with self.lock:
             if self.is_cancelled or self.is_paused:
-                raise yt_dlp.utils.DownloadCancelled("Download cancelled or paused by user")
-            d['id'] = self.id
-            d['phase'] = 'postprocess'
-            self.postprocess_progress.emit(d)
+                self.download_cancelled.emit(self.id)
+                return
 
-        self.ydl_opts['progress_hooks'] = [progress_hook]
-        self.ydl_opts['postprocessor_hooks'] = [postprocessor_hook]
-        self.ydl_opts['continuedl'] = True  # برای resume
+        self.download_step.emit(self.id, "شروع دانلود...")
+
+        # Build CLI args
+        cli_args = [
+            "--output", self.ydl_opts['outtmpl']['default'],
+            "-f", str(self.ydl_opts['format']),
+            "--retries", "10",
+            "--continue",
+            "-v"  # Verbose for logging
+        ]
+        if self.ffmpeg_path:
+            cli_args += ["--ffmpeg-location", self.ffmpeg_path]
+        if self.ydl_opts.get('proxy'):
+            cli_args += ["--proxy", self.ydl_opts['proxy']]
+        # Postprocessors
+        if self.ydl_opts.get('format') == 'bestaudio/best':
+            cli_args += ["--extract-audio", "--audio-format", "mp3"]
+        else:
+            pp = self.ydl_opts['postprocessors'][0]
+            if pp['key'] == 'FFmpegVideoConvertor':
+                cli_args += ["--recode-video", pp['preferedformat']]
+        # Subtitles
+        if self.ydl_opts.get('writesubtitles', False):
+            cli_args += ["--write-subs", "--write-auto-sub"]
+            if 'subtitleslangs' in self.ydl_opts:
+                cli_args += ["--sub-langs", ",".join(self.ydl_opts['subtitleslangs'])]
+            pp_sub = next((p for p in self.ydl_opts.get('postprocessors', []) if p['key'] == 'FFmpegSubtitlesConvertor'), None)
+            if pp_sub:
+                cli_args += ["--convert-subs", pp_sub['format']]
+
+        cmd = [self.yt_dlp_path] + cli_args + [self.url]
+
+        self.process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, universal_newlines=True
+        )
 
         try:
-            self.download_step.emit(self.id, "استخراج اطلاعات...")
-            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
-                info_dict = ydl.extract_info(self.url, download=False)
-                self.download_step.emit(self.id, "شروع دانلود...")
-                ydl.download([self.url])
+            for line in iter(self.process.stdout.readline, ''):
+                line = line.strip()
+                if not line:
+                    continue
+                self.log_line.emit(line)
+                with self.lock:
+                    if self.is_cancelled or self.is_paused:
+                        self.process.terminate()
+                        self.process.wait()
+                        self.download_cancelled.emit(self.id)
+                        return
+
+                if '[download]' in line:
+                    d = self.parse_progress_line(line)
+                    if d:
+                        self.download_progress.emit(d)
+
+                if '[Merger]' in line or '[Video Remuxing]' in line or '[FFmpeg]' in line:
+                    self.postprocess_progress.emit({'id': self.id, 'status': 'postprocess', 'filename': self.filename or 'Unknown'})
+
+            self.process.wait()
+            if self.process.returncode == 0:
                 info_dict['id'] = self.id
-                info_dict['filepath'] = ydl.prepare_filename(info_dict)
+                # Guess filepath from outtmpl
+                safe_title = re.sub(r'[^\w\s-]', '', info_dict.get('title', 'Unknown')).strip()
+                ext = 'mp3' if self.ydl_opts.get('format') == 'bestaudio/best' else self.ydl_opts['postprocessors'][0]['preferedformat'] if self.ydl_opts.get('postprocessors') else 'mp4'
+                info_dict['filepath'] = os.path.join(self.ydl_opts['outtmpl']['default'].rsplit('.', 1)[0], f"{safe_title}.{ext}")
                 self.download_finished.emit(info_dict)
-        except yt_dlp.utils.DownloadCancelled:
-            if self.is_paused:
-                self.download_cancelled.emit(self.id)
             else:
-                self.download_cancelled.emit(self.id)
-        except yt_dlp.utils.DownloadError as e:
-            error_str = str(e).lower()
-            if "geo-restricted" in error_str:
-                self.download_error.emit("ویدیو به دلیل محدودیت جغرافیایی در دسترس نیست.", self.id)
-            elif "connectionreseterror" in error_str or "10054" in error_str:
-                self.download_error.emit("اتصال توسط سرور قطع شد. دوباره تلاش کنید.", self.id)
-            else:
-                self.download_error.emit(f"خطا در دانلود: {e}", self.id)
+                self.download_error.emit("خطا در دانلود (return code != 0)", self.id)
         except Exception as e:
-            self.download_error.emit(f"خطای غیرمنتظره: {e}", self.id)
+            self.download_error.emit(f"خطا در فرآیند دانلود: {e}", self.id)
+
+    def parse_progress_line(self, line):
+        d = {'id': self.id, 'status': 'downloading'}
+        # Percent
+        percent_match = re.search(r'\[download\]\s+([\d.]+)%', line)
+        if percent_match:
+            d['_percent_str'] = percent_match.group(1) + '%'
+        # Downloaded size
+        size_match = re.search(r'of\s+([\d.]+[KMG]i?B)', line)
+        if size_match:
+            d['downloaded_bytes'] = size_match.group(1)
+        # Speed
+        speed_match = re.search(r'at\s+([\d.]+[KMG]i?B/s)', line)
+        if speed_match:
+            d['speed'] = float(re.search(r'([\d.]+)', speed_match.group(1)).group(1))
+            unit = re.search(r'([KMG]i?B/s)', speed_match.group(1)).group(1)
+            if 'K' in unit:
+                d['speed'] *= 1024
+            elif 'M' in unit:
+                d['speed'] *= 1024**2
+            elif 'G' in unit:
+                d['speed'] *= 1024**3
+        # ETA
+        eta_match = re.search(r'ETA\s+([\d:]+)', line)
+        if eta_match:
+            eta_str = eta_match.group(1)
+            d['eta'] = sum(int(x) * 60**i for i, x in enumerate(reversed(eta_str.split(':'))))
+        # Destination filename
+        dest_match = re.search(r'Destination:\s+(.*)', line)
+        if dest_match:
+            self.filename = dest_match.group(1).strip()
+        return d if '_percent_str' in d else None
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -458,6 +658,7 @@ class App(QWidget):
     ui_update_signal = Signal(str, bool)
     video_info_loaded = Signal(int, dict)
     update_progress = Signal(str, float, str, str, str)  # id, percent, downloaded_str, speed_str, eta_str
+    log_signal = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -471,13 +672,17 @@ class App(QWidget):
         self.downloading_all = False
         self.yt_dlp_version = None
         self.ffmpeg_version = None
+        self.yt_dlp_path = None
+        self.ffmpeg_path = None
         self.thread_pool = ThreadPoolExecutor(max_workers=4)
         self.fetch_cancelled = False
         self.ask_delete_partial = False
+        self.progress_emit_counter = {}  # To rate-limit progress emits
 
         self.ui_update_signal.connect(self.update_ui_from_thread)
         self.video_info_loaded.connect(self._add_to_table_from_thread)
         self.update_progress.connect(self._update_progress_ui)
+        self.log_signal.connect(self.log_message)
 
         self.load_settings()
         self.apply_theme()
@@ -489,6 +694,10 @@ class App(QWidget):
         self.ui_timer = QTimer(self)
         self.ui_timer.timeout.connect(self._refresh_ui)
         self.ui_timer.start(1000)
+
+    def log_message(self, message):
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.log_text.append(f"[{timestamp}] {message}")
 
     def init_ui(self):
         main_layout = QVBoxLayout()
@@ -539,6 +748,16 @@ class App(QWidget):
         header.setSectionResizeMode(QHeaderView.Stretch)
         header.setSectionResizeMode(0, QHeaderView.Interactive)
         header.setSectionResizeMode(1, QHeaderView.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.Interactive)
+        header.setSectionResizeMode(4, QHeaderView.Interactive)
+        header.setSectionResizeMode(5, QHeaderView.Interactive)
+        header.setSectionResizeMode(6, QHeaderView.Interactive)
+        header.setSectionResizeMode(7, QHeaderView.Interactive)
+        header.setSectionResizeMode(8, QHeaderView.Interactive)
+        header.setSectionResizeMode(9, QHeaderView.Interactive)
+        header.setSectionResizeMode(10, QHeaderView.Interactive)
+        header.setSectionResizeMode(11, QHeaderView.Interactive)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(True)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -737,10 +956,6 @@ class App(QWidget):
             }}
         """
         self.setStyleSheet(stylesheet)
-
-    def log_message(self, message):
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        self.log_text.append(f"[{timestamp}] {message}")
 
     def show_context_menu(self, position, tab_type):
         if tab_type == "download":
@@ -1110,31 +1325,40 @@ class App(QWidget):
         self.url_input.clear()
 
     def _fetch_and_add(self, url):
+        yt_path = get_yt_dlp_path()
+        if not yt_path:
+            self.ui_update_signal.emit("خطا: yt-dlp در دسترس نیست.", True)
+            return
         try:
-            ydl_opts = {'quiet': True, 'extract_flat': True, 'force_generic_extractor': False}
-            if self.settings.get("proxy"):
-                ydl_opts['proxy'] = self.settings["proxy"]
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                if self.fetch_cancelled:
-                    return
-                info = ydl.extract_info(url, download=False)
-                
+            # Use --flat-playlist for playlists
+            cmd = [yt_path, "--flat-playlist", "-J", url]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            info = json.loads(result.stdout.strip()) if result.stdout.strip() else {}
+
             if self.fetch_cancelled:
                 return
 
             if 'entries' in info:
-                for entry in info.get('entries') or []:
+                entries = info.get('entries', [])
+                batch_size = 100  # افزایش batch size برای کاهش فراخوانی UI
+                for i in range(0, len(entries), batch_size):
                     if self.fetch_cancelled:
                         return
-                    if entry and entry.get('url'):
-                        video_id_or_url = entry.get('url', '')
-                        if video_id_or_url.startswith('http'):
-                            full_url = video_id_or_url
-                        else:
-                            full_url = f"https://www.youtube.com/watch?v={video_id_or_url}"
-                        entry['webpage_url'] = full_url
-                        self.video_info_loaded.emit(-1, entry)
-            elif info.get('webpage_url'):
+                    batch = entries[i:i+batch_size]
+                    for entry in batch:
+                        if self.fetch_cancelled:
+                            return
+                        if entry and entry.get('url'):
+                            video_id_or_url = entry.get('url', '')
+                            if video_id_or_url.startswith('http'):
+                                full_url = video_id_or_url
+                            else:
+                                full_url = f"https://www.youtube.com/watch?v={video_id_or_url}"
+                            entry['webpage_url'] = full_url
+                            self.video_info_loaded.emit(-1, entry)
+                    time.sleep(0.5)  # افزایش sleep برای جلوگیری از freeze UI
+            else:
+                info['webpage_url'] = url
                 self.video_info_loaded.emit(-1, info)
         except Exception as e:
             if not self.fetch_cancelled:
@@ -1210,18 +1434,26 @@ class App(QWidget):
         self.log_message(f"اضافه شدن به صف: {item['title']}")
 
     def _fetch_and_add_list(self, urls):
-        for url in urls:
+        yt_path = get_yt_dlp_path()
+        if not yt_path:
+            self.ui_update_signal.emit("خطا: yt-dlp در دسترس نیست.", True)
+            return
+        batch_size = 100  # افزایش batch size
+        for i in range(0, len(urls), batch_size):
             if self.fetch_cancelled:
                 return
-            try:
-                ydl_opts = {'quiet': True, 'force_generic_extractor': False}
-                if self.settings.get("proxy"):
-                    ydl_opts['proxy'] = self.settings["proxy"]
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
+            batch = urls[i:i+batch_size]
+            for url in batch:
+                if self.fetch_cancelled:
+                    return
+                try:
+                    cmd = [yt_path, "--flat-playlist", "-J", url]
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    info = json.loads(result.stdout.strip()) if result.stdout.strip() else {}
                     self.video_info_loaded.emit(-1, info)
-            except Exception as e:
-                self.log_message(f"خطا در دریافت اطلاعات URL {url}: {e}")
+                except Exception as e:
+                    self.log_message(f"خطا در دریافت اطلاعات URL {url}: {e}")
+                time.sleep(0.1)  # کاهش sleep برای لیست‌های کوچک
         self.ui_update_signal.emit("وارد کردن آدرس‌ها به پایان رسید.", True)
 
     def restore_queue_to_table(self):
@@ -1341,12 +1573,12 @@ class App(QWidget):
             quality_str = item['quality']
             video_format = item.get('video_format', self.settings.get("video_format", "mp4"))
             if quality_str == "بهترین":
-                ydl_opts['format'] = 'bestvideo+bestaudio/best'
+                ydl_opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]'
             elif quality_str == "بدترین":
-                ydl_opts['format'] = 'worstvideo+worstaudio/worst'
+                ydl_opts['format'] = 'worstvideo[ext=mp4]+worstaudio[ext=m4a]/worst[ext=mp4]'
             else:
                 res = quality_str.replace("p", "")
-                ydl_opts['format'] = f'bestvideo[height<={res}]+bestaudio/best[height<={res}]'
+                ydl_opts['format'] = f'bestvideo[ext=mp4][height<={res}]+bestaudio[ext=m4a]/best[ext=mp4][height<={res}]'
             ydl_opts['postprocessors'] = [{'key': 'FFmpegVideoConvertor', 'preferedformat': video_format}]
 
         subtitle_lang = item['subtitle_lang']
@@ -1357,19 +1589,23 @@ class App(QWidget):
             ydl_opts['subtitleslangs'] = [lang_code]
             ydl_opts['postprocessors'].append({'key': 'FFmpegSubtitlesConvertor', 'format': 'srt'})
 
-        ffmpeg_path = get_ffmpeg_path()
-        if ffmpeg_path:
-            ydl_opts['ffmpeg_location'] = ffmpeg_path
+        if not self.yt_dlp_path or not self.ffmpeg_path:
+            self.log_message("ابزارهای لازم (yt-dlp یا ffmpeg) در دسترس نیستند.")
+            item['status'] = "خطا"
+            self.table.setItem(row, 7, QTableWidgetItem("خطا"))
+            return
 
-        downloader = DownloaderThread(item['id'], item['url'], ydl_opts)
+        downloader = DownloaderThread(item['id'], item['url'], ydl_opts, self.yt_dlp_path, self.ffmpeg_path)
         downloader.download_progress.connect(self.on_download_progress)
         downloader.postprocess_progress.connect(self.on_postprocess_progress)
         downloader.download_finished.connect(self.on_download_finished)
         downloader.download_error.connect(self.on_download_error)
         downloader.download_cancelled.connect(self.on_download_cancelled)
         downloader.download_step.connect(self.on_download_step)
+        downloader.log_line.connect(self.log_signal)
         self.active_downloads.append(downloader)
         downloader.start()
+        self.progress_emit_counter[item['id']] = 0  # Reset counter
 
     def on_download_step(self, item_id, step_msg):
         row = self.id_to_row.get(item_id)
@@ -1384,14 +1620,15 @@ class App(QWidget):
         if d['status'] == 'downloading':
             try:
                 percent = float(d.get('_percent_str', '0%').strip().replace('%', ''))
-                downloaded = d.get('downloaded_bytes', 0)
-                speed = d.get('speed')
-                eta = d.get('eta')
-                downloaded_str = format_file_size(downloaded)
-                speed_str = format_speed(speed)
-                eta_str = format_eta(eta)
-                # به‌روزرسانی فوری UI بدون تاخیر
-                self.update_progress.emit(d['id'], percent, downloaded_str, speed_str, eta_str)
+                downloaded_str = d.get('downloaded_bytes', '0 B')
+                speed_str = format_speed(d.get('speed'))
+                eta_str = format_eta(d.get('eta'))
+
+                # Rate-limit emits to every 5% or 1 second to prevent UI freeze
+                counter = self.progress_emit_counter.get(d['id'], 0) + 1
+                self.progress_emit_counter[d['id']] = counter
+                if counter % 5 == 0 or percent % 5 == 0:  # Emit every 5 updates or 5%
+                    self.update_progress.emit(d['id'], percent, downloaded_str, speed_str, eta_str)
             except (ValueError, AttributeError):
                 pass
 
@@ -1467,19 +1704,20 @@ class App(QWidget):
         row = self.id_to_row.get(item_id)
         if row is not None:
             item = self.download_queue[row]
-            if item['status'] == "در حال دانلود...":
-                thread = next((t for t in self.active_downloads if t.id == item_id), None)
-                if thread:
-                    if thread.is_paused:
-                        self._handle_download_end(item_id, "متوقف شده", "دانلود متوقف شد.", is_pause=True)
-                    else:
-                        self._handle_download_end(item_id, "لغو شده", "دانلود لغو شد.", is_pause=False)
+            thread = next((t for t in self.active_downloads if t.id == item_id), None)
+            if thread:
+                if thread.is_paused:
+                    self._handle_download_end(item_id, "متوقف شده", "دانلود متوقف شد.", is_pause=True)
+                else:
+                    self._handle_download_end(item_id, "لغو شده", "دانلود لغو شد.", is_pause=False)
 
     def _handle_download_end(self, item_id, status, message, is_pause=False):
         thread_index = self._find_thread_by_id(item_id)
         if thread_index != -1:
             thread = self.active_downloads.pop(thread_index)
-            thread.wait()
+            if not thread.wait(timeout=5):  # Wait with timeout to prevent hang
+                thread.terminate()
+                thread.wait()
 
         row = self.id_to_row.get(item_id)
         if row is not None and row < self.table.rowCount():
@@ -1531,7 +1769,9 @@ class App(QWidget):
             thread_index = self._find_thread_by_id(item['id'])
             if thread_index != -1:
                 self.active_downloads[thread_index].is_paused = True
-                self.active_downloads[thread_index].wait()
+                if not self.active_downloads[thread_index].wait(timeout=5):
+                    self.active_downloads[thread_index].terminate()
+                    self.active_downloads[thread_index].wait()
                 self.log_message(f"مکث دانلود: {item['title']}")
                 self._handle_download_end(item['id'], "متوقف شده", "دانلود مکث شد.", is_pause=True)
 
@@ -1548,7 +1788,9 @@ class App(QWidget):
             thread_index = self._find_thread_by_id(item['id'])
             if thread_index != -1:
                 self.active_downloads[thread_index].is_cancelled = True
-                self.active_downloads[thread_index].wait()
+                if not self.active_downloads[thread_index].wait(timeout=5):
+                    self.active_downloads[thread_index].terminate()
+                    self.active_downloads[thread_index].wait()
                 self.log_message(f"لغو دانلود تکی: {item['title']}")
 
     def start_single_download_from_menu(self, row):
@@ -1562,7 +1804,9 @@ class App(QWidget):
     def cancel_all_downloads(self):
         for thread in list(self.active_downloads):
             thread.is_cancelled = True
-            thread.wait()
+            if not thread.wait(timeout=5):
+                thread.terminate()
+                thread.wait()
         self.downloading_all = False
         self.log_message("لغو تمام دانلودها.")
         self.check_all_finished()
@@ -1576,15 +1820,19 @@ class App(QWidget):
             self.log_message("تمام عملیات دانلود به پایان رسید.")
 
     def check_dependencies(self, silent=True):
+        self.yt_dlp_path = get_yt_dlp_path()
+        self.ffmpeg_path = get_ffmpeg_path()
         self.yt_dlp_version = get_yt_dlp_version()
         self.ffmpeg_version = get_ffmpeg_version()
-        if not self.yt_dlp_version:
+
+        if not self.yt_dlp_path:
             if not silent:
-                QMessageBox.critical(self, "وابستگی", "yt-dlp نصب نیست. لطفاً با 'pip install yt-dlp' نصب کنید.")
+                QMessageBox.critical(self, "وابستگی", "yt-dlp یافت نشد و دانلود ناموفق بود.")
             return False
-        if not self.ffmpeg_version:
+        if not self.ffmpeg_path:
             if not silent:
-                QMessageBox.warning(self, "وابستگی", "ffmpeg نصب نیست. برای تبدیل فرمت‌ها لازم است.")
+                QMessageBox.warning(self, "وابستگی", "ffmpeg یافت نشد و دانلود ناموفق بود.")
+            return False
         return True
 
     def _refresh_ui(self):
