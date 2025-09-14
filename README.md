@@ -29,7 +29,7 @@
 1. مخزن را کلون کنید:
    ```bash
    git clone https://github.com/NoirMorph/YTDL-GUI.git
-   cd YouTubeDownloader
+   cd YTDL-GUI
    ```
 2. وابستگی‌ها را نصب کنید:
    ```bash
@@ -128,7 +128,7 @@ To run or build the YouTubeDownloader application, ensure the following are inst
 1. Clone the repository:
    ```bash
    git clone https://github.com/NoirMorph/YTDL-GUI.git
-   cd YouTubeDownloader
+   cd YTDL-GUI
    ```
 
 2. Install Python dependencies:
