@@ -1,3 +1,94 @@
+# دانلودکننده یوتیوب
+
+**دانلودکننده یوتیوب** یک برنامه گرافیکی ساده و قدرتمند برای دانلود ویدیوها و لیست‌های پخش از یوتیوب است. این برنامه از `yt-dlp` برای دانلود و `ffmpeg` برای تبدیل فرمت استفاده می‌کند و دارای رابط کاربری مدرن به زبان فارسی و انگلیسی است.
+
+## ویژگی‌ها
+- دانلود ویدیوهای تکی یا لیست‌های پخش کامل.
+- پشتیبانی از کیفیت‌های مختلف (مثل 1080p، 720p، بهترین، بدترین).
+- دانلود ویدیو با صدا، فقط صدا (MP3)، یا زیرنویس (مثل فارسی و انگلیسی).
+- ادامه دانلودهای متوقف‌شده و مدیریت فایل‌های ناقص.
+- تنظیمات قابل‌تغییر برای پوشه ذخیره، فرمت، پروکسی و تم (روشن، تیره، خودکار).
+- خروجی گرفتن از صف دانلود به فرمت‌های TXT، JSON یا CSV.
+- پشتیبانی از دو زبان انگلیسی و فارسی.
+
+## پیش‌نیازها
+### نرم‌افزارهای مورد نیاز
+- **Python 3.8+**
+- **PySide6**
+- **requests**
+- **yt-dlp**
+- **ffmpeg**
+
+### فایل‌های مورد نیاز
+- پوشه `yt-dlp_bin/` حاوی فایل اجرایی `yt-dlp`.
+- پوشه `ffmpeg_bin/` حاوی فایل اجرایی `ffmpeg`.
+- فایل `icon.ico` در مسیر اصلی پروژه.
+
+## نصب
+### اجرای مستقیم
+1. مخزن را کلون کنید:
+   ```bash
+   git clone https://github.com/NoirMorphm/YouTubeDownloader.git
+   cd YouTubeDownloader
+   ```
+2. وابستگی‌ها را نصب کنید:
+   ```bash
+   pip install PySide6 requests yt-dlp
+   ```
+3. فایل‌های `yt-dlp` و `ffmpeg` را در پوشه‌های مربوطه قرار دهید.
+4. برنامه را اجرا کنید:
+   ```bash
+   python bugfixed.py
+   ```
+
+### ساخت فایل اجرایی
+برای ویندوز (PowerShell):
+```powershell
+pyinstaller --name YouTubeDownloader `
+    --onefile `
+    --windowed `
+    --noconsole `
+    --icon ".\icon.ico" `
+    --add-data "yt-dlp_bin;yt-dlp_bin" `
+    --add-data "ffmpeg_bin;ffmpeg_bin" `
+    --add-data "icon.ico;." `
+    --noconfirm `
+    --hidden-import yt_dlp `
+    --hidden-import PySide6.QtGui `
+    --hidden-import PySide6.QtWidgets `
+    --hidden-import PySide6.QtCore `
+    .\bugfixed.py
+```
+
+### ایجاد نصب‌کننده ویندوز
+1. اسکریپت `YouTubeDownloader.iss` را در Inno Setup Compiler باز کنید.
+2. اسکریپت را کامپایل کنید تا `YouTubeDownloader_Setup.exe` ایجاد شود.
+3. نصب‌کننده را اجرا کنید.
+
+## استفاده
+1. برنامه را اجرا کنید.
+2. آدرس ویدیوی یوتیوب یا لیست پخش را وارد کنید و روی **"اضافه کردن به صف"** کلیک کنید.
+3. در تنظیمات، گزینه‌های دلخواه (پوشه ذخیره، فرمت، کیفیت، زیرنویس) را انتخاب کنید.
+4. روی **"شروع دانلود"** کلیک کنید و پیشرفت را در جدول مشاهده کنید.
+5. برای لیست‌های پخش بزرگ، از `?playlist_items=1-50` در آدرس استفاده کنید.
+
+## نکات مهم
+- برای لیست‌های پخش بزرگ، تعداد آیتم‌ها را محدود کنید تا از هنگ کردن رابط کاربری جلوگیری شود.
+- برای کاهش زمان تبدیل، فرمت `webm` را انتخاب کنید.
+- فایل‌های تنظیمات در `%APPDATA%\YouTubeDownloader` ذخیره می‌شوند.
+
+## عیب‌یابی
+- **خطای پیدا نشدن yt-dlp یا ffmpeg**: مطمئن شوید فایل‌های اجرایی در پوشه‌های درست قرار دارند.
+- **هنگ کردن برای لیست‌های پخش بزرگ**: تعداد آیتم‌ها را محدود کنید.
+- **کند بودن تبدیل فرمت**: از فرمت `webm` استفاده کنید.
+
+## تماس
+برای پشتیبانی، با [NoirMorph](https://github.com/NoirMorph) تماس بگیرید یا یک Issue در GitHub باز کنید.
+
+
+---
+
+
 # YouTubeDownloader
 
 **YouTubeDownloader** is a user-friendly GUI application built with Python and PySide6 for downloading videos and playlists from YouTube. It leverages `yt-dlp` for downloading and `ffmpeg` for format conversion, providing a robust solution for managing YouTube downloads with a modern interface.
@@ -142,92 +233,3 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 
 ## Contact
 For questions or support, contact [NoirMorph](https://github.com/NoirMorph) or open an issue on GitHub.
-
----
-
-# دانلودکننده یوتیوب
-
-**دانلودکننده یوتیوب** یک برنامه گرافیکی ساده و قدرتمند برای دانلود ویدیوها و لیست‌های پخش از یوتیوب است. این برنامه از `yt-dlp` برای دانلود و `ffmpeg` برای تبدیل فرمت استفاده می‌کند و دارای رابط کاربری مدرن به زبان فارسی و انگلیسی است.
-
-## ویژگی‌ها
-- دانلود ویدیوهای تکی یا لیست‌های پخش کامل.
-- پشتیبانی از کیفیت‌های مختلف (مثل 1080p، 720p، بهترین، بدترین).
-- دانلود ویدیو با صدا، فقط صدا (MP3)، یا زیرنویس (مثل فارسی و انگلیسی).
-- ادامه دانلودهای متوقف‌شده و مدیریت فایل‌های ناقص.
-- تنظیمات قابل‌تغییر برای پوشه ذخیره، فرمت، پروکسی و تم (روشن، تیره، خودکار).
-- خروجی گرفتن از صف دانلود به فرمت‌های TXT، JSON یا CSV.
-- پشتیبانی از دو زبان انگلیسی و فارسی.
-
-## پیش‌نیازها
-### نرم‌افزارهای مورد نیاز
-- **Python 3.8+**
-- **PySide6**
-- **requests**
-- **yt-dlp**
-- **ffmpeg**
-
-### فایل‌های مورد نیاز
-- پوشه `yt-dlp_bin/` حاوی فایل اجرایی `yt-dlp`.
-- پوشه `ffmpeg_bin/` حاوی فایل اجرایی `ffmpeg`.
-- فایل `icon.ico` در مسیر اصلی پروژه.
-
-## نصب
-### اجرای مستقیم
-1. مخزن را کلون کنید:
-   ```bash
-   git clone https://github.com/NoirMorphm/YouTubeDownloader.git
-   cd YouTubeDownloader
-   ```
-2. وابستگی‌ها را نصب کنید:
-   ```bash
-   pip install PySide6 requests yt-dlp
-   ```
-3. فایل‌های `yt-dlp` و `ffmpeg` را در پوشه‌های مربوطه قرار دهید.
-4. برنامه را اجرا کنید:
-   ```bash
-   python bugfixed.py
-   ```
-
-### ساخت فایل اجرایی
-برای ویندوز (PowerShell):
-```powershell
-pyinstaller --name YouTubeDownloader `
-    --onefile `
-    --windowed `
-    --noconsole `
-    --icon ".\icon.ico" `
-    --add-data "yt-dlp_bin;yt-dlp_bin" `
-    --add-data "ffmpeg_bin;ffmpeg_bin" `
-    --add-data "icon.ico;." `
-    --noconfirm `
-    --hidden-import yt_dlp `
-    --hidden-import PySide6.QtGui `
-    --hidden-import PySide6.QtWidgets `
-    --hidden-import PySide6.QtCore `
-    .\bugfixed.py
-```
-
-### ایجاد نصب‌کننده ویندوز
-1. اسکریپت `YouTubeDownloader.iss` را در Inno Setup Compiler باز کنید.
-2. اسکریپت را کامپایل کنید تا `YouTubeDownloader_Setup.exe` ایجاد شود.
-3. نصب‌کننده را اجرا کنید.
-
-## استفاده
-1. برنامه را اجرا کنید.
-2. آدرس ویدیوی یوتیوب یا لیست پخش را وارد کنید و روی **"اضافه کردن به صف"** کلیک کنید.
-3. در تنظیمات، گزینه‌های دلخواه (پوشه ذخیره، فرمت، کیفیت، زیرنویس) را انتخاب کنید.
-4. روی **"شروع دانلود"** کلیک کنید و پیشرفت را در جدول مشاهده کنید.
-5. برای لیست‌های پخش بزرگ، از `?playlist_items=1-50` در آدرس استفاده کنید.
-
-## نکات مهم
-- برای لیست‌های پخش بزرگ، تعداد آیتم‌ها را محدود کنید تا از هنگ کردن رابط کاربری جلوگیری شود.
-- برای کاهش زمان تبدیل، فرمت `webm` را انتخاب کنید.
-- فایل‌های تنظیمات در `%APPDATA%\YouTubeDownloader` ذخیره می‌شوند.
-
-## عیب‌یابی
-- **خطای پیدا نشدن yt-dlp یا ffmpeg**: مطمئن شوید فایل‌های اجرایی در پوشه‌های درست قرار دارند.
-- **هنگ کردن برای لیست‌های پخش بزرگ**: تعداد آیتم‌ها را محدود کنید.
-- **کند بودن تبدیل فرمت**: از فرمت `webm` استفاده کنید.
-
-## تماس
-برای پشتیبانی، با [NoirMorph](https://github.com/NoirMorph) تماس بگیرید یا یک Issue در GitHub باز کنید.
