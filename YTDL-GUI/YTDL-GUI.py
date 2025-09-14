@@ -57,6 +57,9 @@ LIGHT_COLOR_GRID = "#E0E0E0"
 LIGHT_COLOR_HOVER = "#E3F2FD"
 LIGHT_COLOR_ALTERNATE = "#FAFAFA"
 
+# Global creation flags to prevent console windows on Windows
+CREATION_FLAGS = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+
 # ---------------- Constants ----------------
 def get_app_dir():
     if getattr(sys, 'frozen', False):
@@ -193,7 +196,14 @@ def download_ffmpeg():
         
         os.remove(zip_path)
         # Clean up extracted dir if any
-        extracted_dir = os.path.join(app_dir, "ffmpeg-" + re.search(r'ffmpeg-([\d.-]+)', zip_path).group(1)) if re.search(r'ffmpeg-([\d.-]+)', zip_path) else None
+        extracted_dir = None
+        for root, dirs, _ in os.walk(app_dir):
+            for d in dirs:
+                if d.startswith("ffmpeg-"):
+                    extracted_dir = os.path.join(root, d)
+                    break
+            if extracted_dir:
+                break
         if extracted_dir and os.path.exists(extracted_dir):
             shutil.rmtree(extracted_dir)
     except Exception as e:
@@ -255,7 +265,7 @@ def get_yt_dlp_version():
     if not path:
         return None
     try:
-        result = subprocess.run([path, '--version'], capture_output=True, text=True, check=False)
+        result = subprocess.run([path, '--version'], capture_output=True, text=True, check=False, creationflags=CREATION_FLAGS)
         version = result.stdout.strip().split('\n')[0] if result.returncode == 0 else None
         logging.info(f"yt-dlp version: {version}")
         return version
@@ -268,8 +278,7 @@ def get_ffmpeg_version():
     if not path:
         return None
     try:
-        creation_flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        result = subprocess.run([path, '-version'], capture_output=True, text=True, check=False, creationflags=creation_flags)
+        result = subprocess.run([path, '-version'], capture_output=True, text=True, check=False, creationflags=CREATION_FLAGS)
         version = "installed" if result.returncode == 0 else None
         if version:
             logging.info("ffmpeg version: installed")
@@ -432,7 +441,7 @@ class DownloaderThread(QThread):
         # Extract info using yt-dlp -J
         try:
             cmd_extract = [self.yt_dlp_path, "-j", self.url]
-            result = subprocess.run(cmd_extract, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd_extract, capture_output=True, text=True, check=True, creationflags=CREATION_FLAGS)
             info_dict = json.loads(result.stdout.strip())
             self.log_line.emit(f"Extracted info for {info_dict.get('title', 'Unknown')}")
         except subprocess.CalledProcessError as e:
@@ -481,7 +490,7 @@ class DownloaderThread(QThread):
 
         self.process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1, universal_newlines=True
+            text=True, bufsize=1, universal_newlines=True, creationflags=CREATION_FLAGS
         )
 
         try:
@@ -531,14 +540,17 @@ class DownloaderThread(QThread):
         # Speed
         speed_match = re.search(r'at\s+([\d.]+[KMG]i?B/s)', line)
         if speed_match:
-            d['speed'] = float(re.search(r'([\d.]+)', speed_match.group(1)).group(1))
-            unit = re.search(r'([KMG]i?B/s)', speed_match.group(1)).group(1)
+            speed_str = speed_match.group(1)
+            num = float(re.search(r'([\d.]+)', speed_str).group(1))
+            unit = re.search(r'([KMG]i?B/s)', speed_str).group(1)
+            multiplier = 1
             if 'K' in unit:
-                d['speed'] *= 1024
+                multiplier = 1024
             elif 'M' in unit:
-                d['speed'] *= 1024**2
+                multiplier = 1024**2
             elif 'G' in unit:
-                d['speed'] *= 1024**3
+                multiplier = 1024**3
+            d['speed'] = num * multiplier
         # ETA
         eta_match = re.search(r'ETA\s+([\d:]+)', line)
         if eta_match:
@@ -1332,7 +1344,7 @@ class App(QWidget):
         try:
             # Use --flat-playlist for playlists
             cmd = [yt_path, "--flat-playlist", "-J", url]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, creationflags=CREATION_FLAGS)
             info = json.loads(result.stdout.strip()) if result.stdout.strip() else {}
 
             if self.fetch_cancelled:
@@ -1448,7 +1460,7 @@ class App(QWidget):
                     return
                 try:
                     cmd = [yt_path, "--flat-playlist", "-J", url]
-                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True, creationflags=CREATION_FLAGS)
                     info = json.loads(result.stdout.strip()) if result.stdout.strip() else {}
                     self.video_info_loaded.emit(-1, info)
                 except Exception as e:
