@@ -45,18 +45,29 @@
 برای ویندوز (PowerShell):
 ```powershell
 pyinstaller --name YouTubeDownloader `
-    --onefile `
-    --windowed `
-    --noconsole `
-    --icon ".\icon.ico" `
-    --add-data "yt-dlp_bin;yt-dlp_bin" `
-    --add-data "ffmpeg_bin;ffmpeg_bin" `
-    --add-data "icon.ico;." `
-    --noconfirm `
-    --hidden-import yt_dlp `
-    --hidden-import PySide6.QtGui `
-    --hidden-import PySide6.QtWidgets `
-    --hidden-import PySide6.QtCore `
+     --onefile `
+     --windowed `
+     --noconsole `
+     --icon ".\icon.ico" `
+     --add-data "yt-dlp_bin;yt-dlp_bin" `
+     --add-data "ffmpeg_bin;ffmpeg_bin" `
+     --add-data "icon.ico;." `
+     --noconfirm `
+     --upx-dir "C:\tools\upx" `
+     --upx-exclude vcruntime140.dll `
+     --upx-exclude ucrtbase.dll `
+     --upx-exclude python312.dll `
+     --hidden-import yt_dlp `
+     --hidden-import PySide6.QtGui `
+     --hidden-import PySide6.QtWidgets `
+     --hidden-import PySide6.QtCore `
+     --hidden-import requests `
+     --hidden-import urllib3 `
+     --exclude-module numpy `
+     --exclude-module scipy `
+     --exclude-module matplotlib `
+     --exclude-module pandas `
+     --clean `
     .\YTDL-GUI.py
 ```
 
