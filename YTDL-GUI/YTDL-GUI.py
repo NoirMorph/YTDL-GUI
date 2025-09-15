@@ -21,41 +21,12 @@ from PySide6.QtWidgets import (
     QMessageBox, QProgressBar, QSpinBox, QDialog, QFormLayout, QMenuBar, QMenu,
     QCheckBox, QTabWidget, QTextEdit, QInputDialog, QAbstractItemView
 )
-from PySide6.QtGui import QPixmap, QAction, QIcon, QFont, QPalette, QColor
+from PySide6.QtGui import QAction, QIcon, QFont
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QMetaObject, QEvent
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
-# ---------------- Color Variables ----------------
-DARK_COLOR_PRIMARY = "#2979FF"
-DARK_COLOR_SECONDARY = "#739EC9"
-DARK_COLOR_PRIMARY_DARK = "#78909C"
-DARK_COLOR_DANGER = "#CF6679"
-DARK_COLOR_NEUTRAL = "#4FC3F7"
-DARK_COLOR_BACKGROUND = "#121212"
-DARK_COLOR_TEXT = "#f8fafc"
-DARK_COLOR_TEXT_MENU = "#64B5F6"
-DARK_COLOR_ACCENT = "#44444E"
-DARK_COLOR_SURFACE = "#1E1E1E"
-DARK_COLOR_GRID = "#333333"
-DARK_COLOR_HOVER = "#154D71"
-DARK_COLOR_ALTERNATE = "#2A2A2A"
-
-LIGHT_COLOR_PRIMARY = "#2196F3"
-LIGHT_COLOR_SECONDARY = "#4CAF50"
-LIGHT_COLOR_PRIMARY_DARK = "#90A4AE"
-LIGHT_COLOR_DANGER = "#F44336"
-LIGHT_COLOR_NEUTRAL = "#29B6F6"
-LIGHT_COLOR_BACKGROUND = "#FFFFFF"
-LIGHT_COLOR_TEXT = "#020618"
-LIGHT_COLOR_TEXT_MENU = "#42A5F5"
-LIGHT_COLOR_ACCENT = "#FFEB3B"
-LIGHT_COLOR_SURFACE = "#F5F5F5"
-LIGHT_COLOR_GRID = "#E0E0E0"
-LIGHT_COLOR_HOVER = "#E3F2FD"
-LIGHT_COLOR_ALTERNATE = "#FAFAFA"
 
 # Global creation flags to prevent console windows on Windows
 CREATION_FLAGS = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
@@ -88,7 +59,9 @@ CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 QUEUE_PATH = os.path.join(CONFIG_DIR, "queue.json")
 THUMB_CACHE_DIR = os.path.join(get_user_data_dir(), ".youtube_downloader_thumbs")
 os.makedirs(THUMB_CACHE_DIR, exist_ok=True)
-FFMPEG_DIR = os.path.join(get_user_data_dir(), "ffmpeg_bin")
+APP_DIR = get_app_dir()
+FFMPEG_BIN_DIR = os.path.join(APP_DIR, "ffmpeg_bin")
+YTDLP_BIN_DIR = os.path.join(APP_DIR, "yt-dlp_bin")
 
 YTDLP_NAME = "yt-dlp.exe" if platform.system().lower() == "windows" else "yt-dlp"
 FFMPEG_NAME = "ffmpeg.exe" if platform.system().lower() == "windows" else "ffmpeg"
@@ -97,7 +70,6 @@ QUALITY_OPTIONS = ["بهترین", "بدترین", "1080p", "720p", "480p", "360
 FORMAT_OPTIONS = ["ویدیو و صدا", "فقط صدا"]
 VIDEO_FORMAT_OPTIONS = ["mp4", "mkv", "mov", "avi", "webm"]
 SUBTITLE_LANGS = ["هیچ", "انگلیسی (en)", "فارسی (fa)"]
-THEME_OPTIONS = ["Auto", "Light", "Dark"]
 
 # ---------------- Helper Functions ----------------
 
@@ -138,10 +110,10 @@ def download_yt_dlp():
         url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
     else:
         url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
-    app_dir = get_app_dir()
-    download_path = os.path.join(app_dir, YTDLP_NAME + ".tmp")
+    os.makedirs(YTDLP_BIN_DIR, exist_ok=True)
+    download_path = os.path.join(YTDLP_BIN_DIR, YTDLP_NAME + ".tmp")
     download_with_progress(url, download_path, "yt-dlp")
-    final_path = os.path.join(app_dir, YTDLP_NAME)
+    final_path = os.path.join(YTDLP_BIN_DIR, YTDLP_NAME)
     os.replace(download_path, final_path)
     if not system == "windows":
         os.chmod(final_path, 0o755)
@@ -167,9 +139,8 @@ def download_ffmpeg():
     else:
         raise OSError("سیستم عامل پشتیبانی نمی‌شود.")
     
-    app_dir = get_app_dir()
-    os.makedirs(os.path.join(app_dir, "ffmpeg_bin"), exist_ok=True)
-    download_path = os.path.join(app_dir, f"ffmpeg{file_ext}.tmp")
+    os.makedirs(FFMPEG_BIN_DIR, exist_ok=True)
+    download_path = os.path.join(FFMPEG_BIN_DIR, f"ffmpeg{file_ext}.tmp")
     
     download_with_progress(url, download_path, "ffmpeg")
     
@@ -179,17 +150,17 @@ def download_ffmpeg():
     try:
         if file_ext == ".zip":
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(app_dir)
+                zip_ref.extractall(FFMPEG_BIN_DIR)
         elif file_ext == ".tar.xz":
             with tarfile.open(zip_path, 'r:xz') as tar_ref:
-                tar_ref.extractall(app_dir)
+                tar_ref.extractall(FFMPEG_BIN_DIR)
         
-        # Copy binaries to app dir
-        for root, _, files in os.walk(app_dir):
+        # Copy binaries to ffmpeg_bin
+        for root, _, files in os.walk(FFMPEG_BIN_DIR):
             for file in files:
                 if file in [FFMPEG_NAME, "ffprobe", "ffprobe.exe", "ffplay", "ffplay.exe"]:
                     src = os.path.join(root, file)
-                    dst = os.path.join(app_dir, file)
+                    dst = os.path.join(FFMPEG_BIN_DIR, file)
                     shutil.copy(src, dst)
                     if not system == "windows":
                         os.chmod(dst, 0o755)
@@ -197,7 +168,7 @@ def download_ffmpeg():
         os.remove(zip_path)
         # Clean up extracted dir if any
         extracted_dir = None
-        for root, dirs, _ in os.walk(app_dir):
+        for root, dirs, _ in os.walk(FFMPEG_BIN_DIR):
             for d in dirs:
                 if d.startswith("ffmpeg-"):
                     extracted_dir = os.path.join(root, d)
@@ -209,42 +180,40 @@ def download_ffmpeg():
     except Exception as e:
         raise IOError(f"خطا در استخراج ffmpeg: {e}")
     
-    final_path = os.path.join(app_dir, FFMPEG_NAME)
+    final_path = os.path.join(FFMPEG_BIN_DIR, FFMPEG_NAME)
     logging.info(f"ffmpeg downloaded to {final_path}")
     return final_path
 
-def get_yt_dlp_path():
+def get_yt_dlp_path(ask_download=True):
+    # Check in yt-dlp_bin
+    app_yt_path = os.path.join(YTDLP_BIN_DIR, YTDLP_NAME)
+    if os.path.exists(app_yt_path):
+        logging.info(f"yt-dlp found in yt-dlp_bin: {app_yt_path}")
+        return app_yt_path
+    
     # Check system PATH
     yt_path = shutil.which(YTDLP_NAME)
     if yt_path:
         logging.info(f"yt-dlp found in system PATH: {yt_path}")
         return yt_path
     
-    # Check app dir
-    app_yt_path = os.path.join(get_app_dir(), YTDLP_NAME)
-    if os.path.exists(app_yt_path):
-        logging.info(f"yt-dlp found in app dir: {app_yt_path}")
-        return app_yt_path
-    
-    # Download
-    logging.info("yt-dlp not found, downloading...")
-    try:
-        return download_yt_dlp()
-    except Exception as e:
-        logging.error(f"Failed to download yt-dlp: {e}")
-        return None
+    # Download if allowed
+    if ask_download:
+        reply = QMessageBox.question(None, "دانلود yt-dlp", "yt-dlp یافت نشد. آیا می‌خواهید دانلود شود؟", QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            logging.info("yt-dlp not found, downloading...")
+            try:
+                return download_yt_dlp()
+            except Exception as e:
+                logging.error(f"Failed to download yt-dlp: {e}")
+                return None
+    return None
 
-def get_ffmpeg_path():
-    # Check system PATH
-    ff_path = shutil.which(FFMPEG_NAME)
-    if ff_path:
-        logging.info(f"ffmpeg found in system PATH: {ff_path}")
-        return ff_path
-    
-    # Check app dir
-    app_ff_path = os.path.join(get_app_dir(), FFMPEG_NAME)
+def get_ffmpeg_path(ask_download=True):
+    # Check in ffmpeg_bin
+    app_ff_path = os.path.join(FFMPEG_BIN_DIR, FFMPEG_NAME)
     if os.path.exists(app_ff_path):
-        logging.info(f"ffmpeg found in app dir: {app_ff_path}")
+        logging.info(f"ffmpeg found in ffmpeg_bin: {app_ff_path}")
         if platform.system().lower() != "windows":
             try:
                 os.chmod(app_ff_path, 0o755)
@@ -252,20 +221,29 @@ def get_ffmpeg_path():
                 logging.error(f"Error setting permissions for ffmpeg: {e}")
         return app_ff_path
     
-    # Download
-    logging.info("ffmpeg not found, downloading...")
-    try:
-        return download_ffmpeg()
-    except Exception as e:
-        logging.error(f"Failed to download ffmpeg: {e}")
-        return None
+    # Check system PATH
+    ff_path = shutil.which(FFMPEG_NAME)
+    if ff_path:
+        logging.info(f"ffmpeg found in system PATH: {ff_path}")
+        return ff_path
+    
+    # Download if allowed
+    if ask_download:
+        reply = QMessageBox.question(None, "دانلود ffmpeg", "ffmpeg یافت نشد. آیا می‌خواهید دانلود شود؟", QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            logging.info("ffmpeg not found, downloading...")
+            try:
+                return download_ffmpeg()
+            except Exception as e:
+                logging.error(f"Failed to download ffmpeg: {e}")
+                return None
+    return None
 
-def get_yt_dlp_version():
-    path = get_yt_dlp_path()
-    if not path:
+def get_yt_dlp_version(yt_path):
+    if not yt_path:
         return None
     try:
-        result = subprocess.run([path, '--version'], capture_output=True, text=True, check=False, creationflags=CREATION_FLAGS)
+        result = subprocess.run([yt_path, '--version'], capture_output=True, text=True, check=False, creationflags=CREATION_FLAGS)
         version = result.stdout.strip().split('\n')[0] if result.returncode == 0 else None
         logging.info(f"yt-dlp version: {version}")
         return version
@@ -273,12 +251,11 @@ def get_yt_dlp_version():
         logging.error(f"Error getting yt-dlp version: {e}")
         return None
 
-def get_ffmpeg_version():
-    path = get_ffmpeg_path()
-    if not path:
+def get_ffmpeg_version(ff_path):
+    if not ff_path:
         return None
     try:
-        result = subprocess.run([path, '-version'], capture_output=True, text=True, check=False, creationflags=CREATION_FLAGS)
+        result = subprocess.run([ff_path, '-version'], capture_output=True, text=True, check=False, creationflags=CREATION_FLAGS)
         version = "installed" if result.returncode == 0 else None
         if version:
             logging.info("ffmpeg version: installed")
@@ -401,11 +378,6 @@ def download_thumbnail(url, save_path):
     except Exception as e:
         logging.error(f"خطا در دانلود تامنیل: {e}")
         return False
-
-def is_dark_mode():
-    if hasattr(QApplication, "styleHints"):
-        return QApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
-    return False
 
 # ---------------- Worker Classes (Threads) ----------------
 class DownloaderThread(QThread):
@@ -604,11 +576,6 @@ class SettingsDialog(QDialog):
         self.subtitle_lang_combo.setCurrentText(self.parent_app.settings.get("subtitle_lang", "هیچ"))
         main_layout.addRow("دانلود زیرنویس:", self.subtitle_lang_combo)
         
-        self.theme_combo = QComboBox()
-        self.theme_combo.addItems(THEME_OPTIONS)
-        self.theme_combo.setCurrentText(self.parent_app.settings.get("theme", "Auto"))
-        main_layout.addRow("تم برنامه:", self.theme_combo)
-        
         self.clear_data_on_exit = QCheckBox("پاک کردن صف دانلود هنگام خروج")
         self.clear_data_on_exit.setChecked(self.parent_app.settings.get("clear_on_exit", False))
         main_layout.addRow(self.clear_data_on_exit)
@@ -668,7 +635,7 @@ class SaveDialog(QDialog):
 
 class App(QWidget):
     ui_update_signal = Signal(str, bool)
-    video_info_loaded = Signal(int, dict)
+    video_info_loaded = Signal(list)  # تغییر به لیست برای batch
     update_progress = Signal(str, float, str, str, str)  # id, percent, downloaded_str, speed_str, eta_str
     log_signal = Signal(str)
 
@@ -692,12 +659,11 @@ class App(QWidget):
         self.progress_emit_counter = {}  # To rate-limit progress emits
 
         self.ui_update_signal.connect(self.update_ui_from_thread)
-        self.video_info_loaded.connect(self._add_to_table_from_thread)
+        self.video_info_loaded.connect(self._add_batch_to_table_from_thread)
         self.update_progress.connect(self._update_progress_ui)
         self.log_signal.connect(self.log_message)
 
         self.load_settings()
-        self.apply_theme()
         self.init_ui()
         self.load_queue()
         self.check_dependencies(silent=True)
@@ -818,156 +784,6 @@ class App(QWidget):
         main_layout.addWidget(self.log_text)
 
         self.setLayout(main_layout)
-
-    def apply_theme(self):
-        theme = self.settings.get("theme", "Auto")
-        use_dark = (theme == "Dark") or (theme == "Auto" and is_dark_mode())
-
-        color_schemes = {
-            "dark": {
-                "PRIMARY": DARK_COLOR_PRIMARY,
-                "SECONDARY": DARK_COLOR_SECONDARY,
-                "PRIMARY_DARK": DARK_COLOR_PRIMARY_DARK,
-                "DANGER": DARK_COLOR_DANGER,
-                "NEUTRAL": DARK_COLOR_NEUTRAL,
-                "BACKGROUND": DARK_COLOR_BACKGROUND,
-                "TEXT": DARK_COLOR_TEXT,
-                "MENU_TEXT": DARK_COLOR_TEXT_MENU,
-                "ACCENT": DARK_COLOR_ACCENT,
-                "SURFACE": DARK_COLOR_SURFACE,
-                "GRID": DARK_COLOR_GRID,
-                "HOVER": DARK_COLOR_HOVER,
-                "ALTERNATE": DARK_COLOR_ALTERNATE
-            },
-            "light": {
-                "PRIMARY": LIGHT_COLOR_PRIMARY,
-                "SECONDARY": LIGHT_COLOR_SECONDARY,
-                "PRIMARY_DARK": LIGHT_COLOR_PRIMARY_DARK,
-                "DANGER": LIGHT_COLOR_DANGER,
-                "NEUTRAL": LIGHT_COLOR_NEUTRAL,
-                "BACKGROUND": LIGHT_COLOR_BACKGROUND,
-                "TEXT": LIGHT_COLOR_TEXT,
-                "MENU_TEXT": LIGHT_COLOR_TEXT_MENU,
-                "ACCENT": LIGHT_COLOR_ACCENT,
-                "SURFACE": LIGHT_COLOR_SURFACE,
-                "GRID": LIGHT_COLOR_GRID,
-                "HOVER": LIGHT_COLOR_HOVER,
-                "ALTERNATE": LIGHT_COLOR_ALTERNATE
-            }
-        }
-
-        colors = color_schemes["dark" if use_dark else "light"]
-
-        palette = QPalette()
-        palette.setColor(QPalette.Window, QColor(colors["BACKGROUND"]))
-        palette.setColor(QPalette.WindowText, QColor(colors["TEXT"]))
-        palette.setColor(QPalette.Base, QColor(colors["SURFACE"]))
-        palette.setColor(QPalette.AlternateBase, QColor(colors["ALTERNATE"]))
-        palette.setColor(QPalette.ToolTipBase, QColor(colors["BACKGROUND"]))
-        palette.setColor(QPalette.ToolTipText, QColor(colors["TEXT"]))
-        palette.setColor(QPalette.Text, QColor(colors["MENU_TEXT"]))
-        palette.setColor(QPalette.Button, QColor(colors["PRIMARY"]))
-        palette.setColor(QPalette.ButtonText, QColor(colors["TEXT"]))
-        palette.setColor(QPalette.Highlight, QColor(colors["PRIMARY_DARK"]))
-        palette.setColor(QPalette.HighlightedText, QColor(colors["TEXT"]))
-        QApplication.setPalette(palette)
-
-        stylesheet = f"""
-            QWidget {{
-                background-color: {colors['BACKGROUND']};
-                color: {colors['TEXT']};
-                font-family: 'Segoe UI', Arial, sans-serif;
-            }}
-            QLineEdit, QTextEdit {{
-                background-color: {colors['SURFACE']};
-                border: 1px solid {colors['GRID']};
-                border-radius: 4px;
-                padding: 5px;
-            }}
-            QPushButton {{
-                background-color: {colors['PRIMARY']};
-                border: none;
-                border-radius: 4px;
-                padding: 6px 12px;
-                color: {colors['TEXT']};
-            }}
-            QPushButton:hover {{
-                background-color: {colors['HOVER']};
-            }}
-            QTableWidget {{
-                background-color: {colors['SURFACE']};
-                alternate-background-color: {colors['ALTERNATE']};
-                gridline-color: {colors['GRID']};
-                selection-background-color: {colors['PRIMARY_DARK']};
-                color: {colors['TEXT']};
-            }}
-            QHeaderView::section {{
-                background-color: {colors['SURFACE']};
-                border: 1px solid {colors['GRID']};
-                padding: 4px;
-            }}
-            QProgressBar {{
-                background-color: {colors['SURFACE']};
-                border: 1px solid {colors['GRID']};
-                text-align: center;
-            }}
-            QProgressBar::chunk {{
-                background-color: {colors['PRIMARY']};
-            }}
-            QComboBox {{
-                background-color: {colors['SURFACE']};
-                border: 1px solid {colors['GRID']};
-                border-radius: 4px;
-                padding: 5px;
-            }}
-            QComboBox::drop-down {{
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 15px;
-                border-left: 1px solid {colors['GRID']};
-            }}
-            QLabel {{ color: {colors['TEXT']}; }}
-            QTabWidget::pane {{ border: 1px solid {colors['GRID']}; }}
-            QTabBar::tab {{
-                background-color: {colors['SURFACE']};
-                border: 1px solid {colors['GRID']};
-                border-bottom-color: {colors['BACKGROUND']};
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                padding: 8px;
-            }}
-            QTabBar::tab:selected {{
-                background-color: {colors['BACKGROUND']};
-            }}
-            QMenu {{
-                background-color: {colors['BACKGROUND']};
-                color: {colors['MENU_TEXT']};
-                border: 1px solid {colors['GRID']};
-                border-radius: 6px;
-                padding: 4px;
-                margin: 2px;
-            }}
-            QMenu::item {{
-                background-color: {colors['SURFACE']};
-                color: {colors['MENU_TEXT']};
-                padding: 8px 28px;
-                margin: 2px;
-                border-radius: 3px;
-            }}
-            QMenu::item:selected {{
-                background-color: {colors['PRIMARY_DARK']};
-                color: {colors['MENU_TEXT']};
-            }}
-            QMenu::item:disabled {{
-                color: {colors['NEUTRAL']};
-            }}
-            QMenu::separator {{
-                height: 1px;
-                background: {colors['GRID']};
-                margin: 4px 8px;
-            }}
-        """
-        self.setStyleSheet(stylesheet)
 
     def show_context_menu(self, position, tab_type):
         if tab_type == "download":
@@ -1191,11 +1007,9 @@ class App(QWidget):
             self.settings["concurrency"] = dialog.concurrency_spin.value()
             self.settings["proxy"] = dialog.proxy_input.text()
             self.settings["subtitle_lang"] = dialog.subtitle_lang_combo.currentText()
-            self.settings["theme"] = dialog.theme_combo.currentText()
             self.settings["clear_on_exit"] = dialog.clear_data_on_exit.isChecked()
             self.settings["delete_partial_on_cancel"] = dialog.delete_partial_on_cancel.isChecked()
             self.save_settings()
-            self.apply_theme()
             self.log_message("تنظیمات ذخیره شد.")
             QMessageBox.information(self, "تنظیمات", "تنظیمات ذخیره شدند.")
 
@@ -1208,7 +1022,6 @@ class App(QWidget):
             "concurrency": 3,
             "proxy": "",
             "subtitle_lang": "هیچ",
-            "theme": "Auto",
             "clear_on_exit": False,
             "delete_partial_on_cancel": False
         })
@@ -1337,7 +1150,7 @@ class App(QWidget):
         self.url_input.clear()
 
     def _fetch_and_add(self, url):
-        yt_path = get_yt_dlp_path()
+        yt_path = self.yt_dlp_path
         if not yt_path:
             self.ui_update_signal.emit("خطا: yt-dlp در دسترس نیست.", True)
             return
@@ -1352,26 +1165,9 @@ class App(QWidget):
 
             if 'entries' in info:
                 entries = info.get('entries', [])
-                batch_size = 100  # افزایش batch size برای کاهش فراخوانی UI
-                for i in range(0, len(entries), batch_size):
-                    if self.fetch_cancelled:
-                        return
-                    batch = entries[i:i+batch_size]
-                    for entry in batch:
-                        if self.fetch_cancelled:
-                            return
-                        if entry and entry.get('url'):
-                            video_id_or_url = entry.get('url', '')
-                            if video_id_or_url.startswith('http'):
-                                full_url = video_id_or_url
-                            else:
-                                full_url = f"https://www.youtube.com/watch?v={video_id_or_url}"
-                            entry['webpage_url'] = full_url
-                            self.video_info_loaded.emit(-1, entry)
-                    time.sleep(0.5)  # افزایش sleep برای جلوگیری از freeze UI
+                self.video_info_loaded.emit(entries)  # ارسال batch کامل
             else:
-                info['webpage_url'] = url
-                self.video_info_loaded.emit(-1, info)
+                self.video_info_loaded.emit([info])
         except Exception as e:
             if not self.fetch_cancelled:
                 self.ui_update_signal.emit(f"خطا در دریافت اطلاعات: {e}", True)
@@ -1391,66 +1187,85 @@ class App(QWidget):
             self.add_btn.setEnabled(True)
             self.cancel_add_btn.setEnabled(False)
 
-    def _add_to_table_from_thread(self, row, video_info):
-        url = video_info.get("webpage_url", video_info.get("url", ""))
-        if any(item['url'] == url for item in self.download_queue):
-            self.log_message(f"URL تکراری: {url}")
-            return
+    def _add_batch_to_table_from_thread(self, video_infos):
+        new_items = []
+        for video_info in video_infos:
+            if self.fetch_cancelled:
+                return
+            url = video_info.get("webpage_url", video_info.get("url", ""))
+            if any(item['url'] == url for item in self.download_queue):
+                self.log_message(f"URL تکراری: {url}")
+                continue
 
-        filesize = video_info.get('filesize_approx', video_info.get('filesize'))
-        filesize_str = format_file_size(filesize)
-        duration_str = format_duration(video_info.get('duration'))
-        thumbnail_url = video_info.get('thumbnail') or video_info.get('thumbnails', [{}])[-1].get('url', '')
+            if not 'webpage_url' in video_info and 'url' in video_info:
+                video_id_or_url = video_info.get('url', '')
+                if video_id_or_url.startswith('http'):
+                    url = video_id_or_url
+                else:
+                    url = f"https://www.youtube.com/watch?v={video_id_or_url}"
+                video_info['webpage_url'] = url
 
-        item_id = str(uuid.uuid4())
+            filesize = video_info.get('filesize_approx', video_info.get('filesize'))
+            filesize_str = format_file_size(filesize)
+            duration_str = format_duration(video_info.get('duration'))
+            thumbnail_url = video_info.get('thumbnail') or video_info.get('thumbnails', [{}])[-1].get('url', '')
+
+            item_id = str(uuid.uuid4())
+            
+            item = {
+                "id": item_id,
+                "title": video_info.get("title", "نامشخص"),
+                "url": url,
+                "filesize_str": filesize_str,
+                "duration_str": duration_str,
+                "view_count": video_info.get("view_count", 0),
+                "upload_date": video_info.get("upload_date", ""),
+                "status": "در صف",
+                "quality": self.settings.get("quality", "بهترین"),
+                "format": self.settings.get("format", "ویدیو و صدا"),
+                "video_format": self.settings.get("video_format", "mp4"),
+                "subtitle_lang": self.settings.get("subtitle_lang", "هیچ"),
+                "download_path": None,
+                "thumbnail_url": thumbnail_url,
+                "downloaded_size": "0 B"  # مقدار اولیه حجم دانلود شده
+            }
+
+            ext = 'mp3' if item["format"] == "فقط صدا" else item["video_format"]
+            exists, path = check_file_exists(self.settings.get("save_folder"), item['title'], ext)
+            if exists:
+                item['status'] = "دانلود شده"
+                item['download_path'] = path
+                self.completed_downloads.append(item)
+                self.update_completed_table_row(self.completed_table.rowCount(), item)
+            else:
+                partial_exists, part_path = check_partial_file(self.settings.get("save_folder"), item['title'], ext)
+                if partial_exists:
+                    item['status'] = "متوقف شده"
+                    # تخمین حجم دانلود شده از فایل part
+                    if os.path.exists(part_path):
+                        item['downloaded_size'] = format_file_size(os.path.getsize(part_path))
+                new_items.append(item)
         
-        item = {
-            "id": item_id,
-            "title": video_info.get("title", "نامشخص"),
-            "url": url,
-            "filesize_str": filesize_str,
-            "duration_str": duration_str,
-            "view_count": video_info.get("view_count", 0),
-            "upload_date": video_info.get("upload_date", ""),
-            "status": "در صف",
-            "quality": self.settings.get("quality", "بهترین"),
-            "format": self.settings.get("format", "ویدیو و صدا"),
-            "video_format": self.settings.get("video_format", "mp4"),
-            "subtitle_lang": self.settings.get("subtitle_lang", "هیچ"),
-            "download_path": None,
-            "thumbnail_url": thumbnail_url,
-            "downloaded_size": "0 B"  # مقدار اولیه حجم دانلود شده
-        }
+        # اضافه کردن batch به queue و table
+        if new_items:
+            start_row = self.table.rowCount()
+            self.table.setRowCount(start_row + len(new_items))
+            for i, item in enumerate(new_items):
+                self.download_queue.append(item)
+                self.id_to_row[item['id']] = start_row + i
+                self.update_table_row(start_row + i, item)
+                self.status_label.setText(f"'{item['title']}' به صف اضافه شد.")
+                self.log_message(f"اضافه شدن به صف: {item['title']}")
 
-        ext = 'mp3' if item["format"] == "فقط صدا" else item["video_format"]
-        exists, path = check_file_exists(self.settings.get("save_folder"), item['title'], ext)
-        if exists:
-            item['status'] = "دانلود شده"
-            item['download_path'] = path
-            self.completed_downloads.append(item)
-            self.update_completed_table_row(self.completed_table.rowCount(), item)
-        else:
-            partial_exists, part_path = check_partial_file(self.settings.get("save_folder"), item['title'], ext)
-            if partial_exists:
-                item['status'] = "متوقف شده"
-                # تخمین حجم دانلود شده از فایل part
-                if os.path.exists(part_path):
-                    item['downloaded_size'] = format_file_size(os.path.getsize(part_path))
-            self.download_queue.append(item)
-            self.id_to_row[item_id] = self.table.rowCount()
-            self.table.setRowCount(self.table.rowCount() + 1)
-            self.update_table_row(self.table.rowCount() - 1, item)
-        
         self.save_queue()
-        self.status_label.setText(f"'{item['title']}' به صف اضافه شد.")
-        self.log_message(f"اضافه شدن به صف: {item['title']}")
 
     def _fetch_and_add_list(self, urls):
-        yt_path = get_yt_dlp_path()
+        yt_path = self.yt_dlp_path
         if not yt_path:
             self.ui_update_signal.emit("خطا: yt-dlp در دسترس نیست.", True)
             return
-        batch_size = 100  # افزایش batch size
+        batch_size = 500  # افزایش batch size برای لیست‌های بزرگ
+        all_entries = []
         for i in range(0, len(urls), batch_size):
             if self.fetch_cancelled:
                 return
@@ -1462,10 +1277,16 @@ class App(QWidget):
                     cmd = [yt_path, "--flat-playlist", "-J", url]
                     result = subprocess.run(cmd, capture_output=True, text=True, check=True, creationflags=CREATION_FLAGS)
                     info = json.loads(result.stdout.strip()) if result.stdout.strip() else {}
-                    self.video_info_loaded.emit(-1, info)
+                    if 'entries' in info:
+                        all_entries.extend(info.get('entries', []))
+                    else:
+                        all_entries.append(info)
                 except Exception as e:
                     self.log_message(f"خطا در دریافت اطلاعات URL {url}: {e}")
-                time.sleep(0.1)  # کاهش sleep برای لیست‌های کوچک
+                time.sleep(0.05)  # sleep کم برای جلوگیری از overload
+            # ارسال batch به UI
+            self.video_info_loaded.emit(all_entries)
+            all_entries = []  # ریست برای batch بعدی
         self.ui_update_signal.emit("وارد کردن آدرس‌ها به پایان رسید.", True)
 
     def restore_queue_to_table(self):
@@ -1473,7 +1294,6 @@ class App(QWidget):
         for row, item in enumerate(self.download_queue):
             self.id_to_row[item['id']] = row
             self.update_table_row(row, item)
-        self.load_visible_thumbnails()
 
     def update_table_row(self, row, item):
         self.table.setItem(row, 0, QTableWidgetItem(item.get("title")))
@@ -1832,10 +1652,10 @@ class App(QWidget):
             self.log_message("تمام عملیات دانلود به پایان رسید.")
 
     def check_dependencies(self, silent=True):
-        self.yt_dlp_path = get_yt_dlp_path()
-        self.ffmpeg_path = get_ffmpeg_path()
-        self.yt_dlp_version = get_yt_dlp_version()
-        self.ffmpeg_version = get_ffmpeg_version()
+        self.yt_dlp_path = get_yt_dlp_path(ask_download=not silent)
+        self.ffmpeg_path = get_ffmpeg_path(ask_download=not silent)
+        self.yt_dlp_version = get_yt_dlp_version(self.yt_dlp_path)
+        self.ffmpeg_version = get_ffmpeg_version(self.ffmpeg_path)
 
         if not self.yt_dlp_path:
             if not silent:
@@ -1866,9 +1686,6 @@ class App(QWidget):
                 os.remove(QUEUE_PATH)
                 self.log_message("صف دانلود هنگام خروج پاک شد.")
         event.accept()
-
-    def load_visible_thumbnails(self):
-        pass  # اگر لازم شد، اینجا پیاده‌سازی شود
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
